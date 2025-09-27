@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 // Access the API key from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -7,7 +7,7 @@ if (!API_KEY) {
   throw new Error("VITE_GEMINI_API_KEY is not set in your environment variables. Please add it to your .env file.");
 }
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+const genAI = new GoogleGenAI(API_KEY);
 
 /**
  * Generates content using the Gemini Pro model.
