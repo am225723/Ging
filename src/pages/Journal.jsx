@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../services/supabaseClient';
 import MoodGauge from '../components/dashboard/MoodGauge';
 import { processJournalEntry, JOURNAL_AI_MODES } from '../services/journalAiClient';
 
@@ -34,7 +35,8 @@ const Button = styled(motion.button)`
   background-color: ${({ theme, variant }) => 
     variant === 'primary' ? theme.colors.primary : 
     variant === 'secondary' ? 'transparent' : theme.colors.accent};
-  color: ${({ theme }) => theme.colors.text.primary};
+  color: ${({ theme, variant }) =>
+    variant === 'primary' ? theme.colors.background.dark : theme.colors.text.primary};
   border: ${({ theme, variant }) => 
     variant === 'secondary' ? `1px solid ${theme.colors.accent}` : 'none'};
   border-radius: ${({ theme }) => theme.borderRadius.small};
@@ -54,6 +56,7 @@ const Button = styled(motion.button)`
   }
   
   &:disabled {
+    opacity: 0.5;
     background-color: ${({ theme }) => theme.colors.secondary};
     cursor: not-allowed;
     transform: none;
@@ -340,7 +343,6 @@ const JournalEntryList = styled.div`
   overflow-y: auto;
   padding-right: 0.5rem;
   
-  /* Custom scrollbar */
   &::-webkit-scrollbar {
     width: 4px;
   }
@@ -356,16 +358,17 @@ const JournalEntryList = styled.div`
 
 const JournalEntryItem = styled.div`
   padding: 0.75rem;
-  background-color: ${({ theme }) => theme.colors.background.dark};
+  background-color: ${({ theme, isSelected }) => isSelected ? 'rgba(199, 167, 88, 0.1)' : theme.colors.background.dark};
   border-radius: ${({ theme }) => theme.borderRadius.small};
+  border-left: 3px solid ${({ theme, isSelected }) => isSelected ? theme.colors.accent : 'transparent'};
   cursor: pointer;
   transition: all ${({ theme }) => theme.transitions.fast};
   
   &:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(199, 167, 88, 0.05);
   }
   
-  .entry-date {
+  .entry-title {
     font-size: 0.9rem;
     color: ${({ theme }) => theme.colors.text.primary};
     margin-bottom: 0.25rem;
@@ -380,25 +383,10 @@ const JournalEntryItem = styled.div`
     text-overflow: ellipsis;
   }
   
-  .entry-mood {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+  .entry-date {
     font-size: 0.8rem;
     color: ${({ theme }) => theme.colors.text.muted};
-    
-    .mood-indicator {
-      width: 0.75rem;
-      height: 0.75rem;
-      border-radius: 50%;
-      background-color: ${({ mood, theme }) => 
-        mood === 'great' ? theme.colors.status.success :
-        mood === 'good' ? '#8BBF61' :
-        mood === 'neutral' ? theme.colors.accent :
-        mood === 'bad' ? '#BF6E61' :
-        theme.colors.status.danger};
-    }
+    margin-top: 0.5rem;
   }
 `;
 
@@ -544,65 +532,147 @@ const RewriteForm = styled.div`
   }
 `;
 
-// Sample journal entries
-const journalEntries = [
-  {
-    id: 1,
-    date: '2025-09-25',
-    title: 'Preparing for Tomorrow',
-    content: 'Today I finally defeated the Nameless King after countless attempts. The feeling of accomplishment was incredible.',
-    mood: 'great',
-    wordCount: 15,
-    tags: ['gaming', 'achievement']
-  },
-  {
-    id: 2,
-    date: '2025-09-23',
-    title: 'Struggling with Malenia',
-    content: 'Spent hours trying to beat Malenia but kept failing. I need to rethink my strategy and maybe try a different build.',
-    mood: 'bad',
-    wordCount: 18,
-    tags: ['gaming', 'frustration']
-  },
-  {
-    id: 3,
-    date: '2025-09-20',
-    title: 'Evo IX Upgrades',
-    content: 'Worked on tuning the Evo IX today. The new exhaust sounds amazing, but I still need to adjust the suspension.',
-    mood: 'good',
-    wordCount: 19,
-    tags: ['car', 'project']
-  }
-];
-
 const Journal = () => {
+  const { user } = useAuth();
+
+  // State for the list of entries
+  const [entries, setEntries] = useState([]);
+  const [dbLoading, setDbLoading] = useState(true);
+
+  // State for the currently selected/edited entry
+  const [currentEntry, setCurrentEntry] = useState(null);
   const [journalTitle, setJournalTitle] = useState('');
   const [journalText, setJournalText] = useState('');
   const [wordCount, setWordCount] = useState(0);
-  const [mood, setMood] = useState(50); // 0-100 scale
+  const [mood, setMood] = useState(50);
   const [tags, setTags] = useState([]);
   const [newTag, setNewTag] = useState('');
+
+  // State for AI functionality
   const [activeAITab, setActiveAITab] = useState('insights');
   const [aiResults, setAiResults] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const [askQuestion, setAskQuestion] = useState('');
   const [selectedTone, setSelectedTone] = useState('');
-  
-  const [currentDate] = useState(new Date().toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  }));
-  
+
+  const fetchEntries = useCallback(async () => {
+    if (!user) return;
+    setDbLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEntries(data);
+    } catch (error) {
+      console.error("Error fetching journal entries:", error);
+    } finally {
+      setDbLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
   const handleTextChange = (e) => {
     const text = e.target.value;
     setJournalText(text);
-    setWordCount(text.trim() === '' ? 0 : text.trim().split(/\s+/).length);
+    setWordCount(text.trim() === '' ? 0 : text.trim().split(/\s+/)?.length);
   };
   
-  const handleSave = () => {
-    // In a real app, this would save to a database
-    alert('Journal entry saved!');
+  const resetEditor = () => {
+    setCurrentEntry(null);
+    setJournalTitle('');
+    setJournalText('');
+    setWordCount(0);
+    setMood(50);
+    setTags([]);
+    setAiResults({});
+  };
+
+  const handleNewEntry = () => {
+    resetEditor();
+  };
+
+  const handleSelectEntry = (entry) => {
+    setCurrentEntry(entry);
+    setJournalTitle(entry.title || '');
+    setJournalText(entry.content || '');
+    setWordCount(entry.content?.trim() === '' ? 0 : entry.content?.trim().split(/\s+/).length || 0);
+    setMood(entry.mood || 50);
+    setTags(entry.tags || []);
+    setAiResults({
+      insights: entry.ai_insights,
+      summary: entry.ai_summary,
+      actions: entry.ai_actions,
+    });
+  };
+
+  const handleSave = async () => {
+    if (!user || journalText.trim().length === 0) return;
+    
+    setDbLoading(true);
+
+    const entryData = {
+      user_id: user.id,
+      title: journalTitle,
+      content: journalText,
+      mood,
+      tags,
+    };
+
+    try {
+      if (currentEntry) {
+        // Update existing entry
+        const { error } = await supabase
+          .from('journal_entries')
+          .update(entryData)
+          .eq('id', currentEntry.id);
+        if (error) throw error;
+      } else {
+        // Create new entry
+        const { data, error } = await supabase
+          .from('journal_entries')
+          .insert(entryData)
+          .select();
+        if (error) throw error;
+        setCurrentEntry(data[0]); // Set the new entry as the current one
+      }
+      await fetchEntries(); // Refresh the list
+      alert('Journal entry saved!');
+    } catch (error) {
+      console.error("Error saving entry:", error);
+      alert('Failed to save entry.');
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!currentEntry) return;
+
+    if (window.confirm("Are you sure you want to delete this entry?")) {
+      setDbLoading(true);
+      try {
+        const { error } = await supabase
+          .from('journal_entries')
+          .delete()
+          .eq('id', currentEntry.id);
+        if (error) throw error;
+
+        resetEditor();
+        await fetchEntries();
+        alert('Entry deleted.');
+      } catch (error) {
+        console.error("Error deleting entry:", error);
+        alert('Failed to delete entry.');
+      } finally {
+        setDbLoading(false);
+      }
+    }
   };
   
   const handleAddTag = (e) => {
@@ -618,130 +688,45 @@ const Journal = () => {
     setTags(tags.filter(tag => tag !== tagToRemove));
   };
   
-  const handleRequestAIInsights = async () => {
+  const handleRequestAI = async (mode) => {
     if (journalText.trim().length < 20) return;
-    
-    setLoading(true);
+
+    setAiLoading(true);
     try {
-      const result = await processJournalEntry(JOURNAL_AI_MODES.INSIGHTS, {
-        title: journalTitle,
-        content: journalText,
-        mood,
-        tags
-      });
-      
-      setAiResults({
-        ...aiResults,
-        insights: result.insights
-      });
-      
-    } catch (error) {
-      console.error('Error getting AI insights:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleRequestAISummary = async () => {
-    if (journalText.trim().length < 20) return;
-    
-    setLoading(true);
-    try {
-      const result = await processJournalEntry(JOURNAL_AI_MODES.SUMMARIZE, {
-        title: journalTitle,
-        content: journalText,
-        mood,
-        tags
-      });
-      
-      setAiResults({
-        ...aiResults,
-        summary: result.summary
-      });
-      
-    } catch (error) {
-      console.error('Error getting AI summary:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleRequestAIActions = async () => {
-    if (journalText.trim().length < 20) return;
-    
-    setLoading(true);
-    try {
-      const result = await processJournalEntry(JOURNAL_AI_MODES.ACTIONS, {
-        title: journalTitle,
-        content: journalText,
-        mood,
-        tags
-      });
-      
-      setAiResults({
-        ...aiResults,
-        actions: result.actions
-      });
-      
-    } catch (error) {
-      console.error('Error getting AI actions:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleAskAI = async () => {
-    if (!askQuestion.trim() || journalText.trim().length < 20) return;
-    
-    setLoading(true);
-    try {
-      const result = await processJournalEntry(JOURNAL_AI_MODES.ASK, {
+      const result = await processJournalEntry(mode, {
         title: journalTitle,
         content: journalText,
         mood,
         tags,
-        question: askQuestion
+        question: askQuestion,
+        tone: selectedTone,
       });
-      
-      setAiResults({
-        ...aiResults,
-        answer: result.answer
-      });
-      
-      setAskQuestion('');
-      
+
+      setAiResults(prev => ({ ...prev, ...result }));
+
+      // If we have an entry, save the AI results to the database
+      if (currentEntry && result) {
+        const updateData = {};
+        if(result.insights) updateData.ai_insights = result.insights;
+        if(result.summary) updateData.ai_summary = result.summary;
+        if(result.actions) updateData.ai_actions = result.actions;
+
+        const { error } = await supabase
+          .from('journal_entries')
+          .update(updateData)
+          .eq('id', currentEntry.id);
+
+        if (error) throw error;
+        await fetchEntries(); // Refresh data
+      }
+
     } catch (error) {
-      console.error('Error asking AI:', error);
+      console.error(`Error getting AI ${mode}:`, error);
     } finally {
-      setLoading(false);
+      setAiLoading(false);
     }
   };
-  
-  const handleRewriteEntry = async () => {
-    if (!selectedTone || journalText.trim().length < 20) return;
-    
-    setLoading(true);
-    try {
-      const result = await processJournalEntry(JOURNAL_AI_MODES.REWRITE, {
-        title: journalTitle,
-        content: journalText,
-        mood,
-        tags,
-        tone: selectedTone
-      });
-      
-      setAiResults({
-        ...aiResults,
-        rewrite: result.rewrite
-      });
-      
-    } catch (error) {
-      console.error('Error rewriting entry:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
+
   const renderAIContent = () => {
     if (journalText.trim().length < 20) {
       return (
@@ -754,155 +739,41 @@ const Journal = () => {
     
     switch (activeAITab) {
       case 'insights':
-        if (aiResults.insights) {
-          return (
-            <AIContent>
-              <p>{aiResults.insights}</p>
-              <Button 
-                variant="secondary" 
-                onClick={handleRequestAIInsights}
-                style={{ marginTop: '1rem' }}
-              >
-                Refresh Insights
-              </Button>
-            </AIContent>
-          );
-        } else {
-          return (
-            <Button 
-              variant="primary" 
-              onClick={handleRequestAIInsights}
-              disabled={journalText.trim().length < 20}
-            >
-              <span className="ai-icon">🧠</span>
-              Get AI Insights
-            </Button>
-          );
-        }
-        
+        if (aiResults.insights) return <AIContent><p>{aiResults.insights}</p></AIContent>;
+        return <Button onClick={() => handleRequestAI(JOURNAL_AI_MODES.INSIGHTS)}>Get AI Insights</Button>;
       case 'summary':
-        if (aiResults.summary) {
-          return (
-            <AIContent>
-              <p>{aiResults.summary}</p>
-              <Button 
-                variant="secondary" 
-                onClick={handleRequestAISummary}
-                style={{ marginTop: '1rem' }}
-              >
-                Refresh Summary
-              </Button>
-            </AIContent>
-          );
-        } else {
-          return (
-            <Button 
-              variant="primary" 
-              onClick={handleRequestAISummary}
-              disabled={journalText.trim().length < 20}
-            >
-              <span className="ai-icon">📝</span>
-              Summarize Entry
-            </Button>
-          );
-        }
-        
+        if (aiResults.summary) return <AIContent><p>{aiResults.summary}</p></AIContent>;
+        return <Button onClick={() => handleRequestAI(JOURNAL_AI_MODES.SUMMARIZE)}>Summarize Entry</Button>;
       case 'actions':
-        if (aiResults.actions) {
-          return (
-            <AIContent>
-              <p>{aiResults.actions}</p>
-              <Button 
-                variant="secondary" 
-                onClick={handleRequestAIActions}
-                style={{ marginTop: '1rem' }}
-              >
-                Refresh Actions
-              </Button>
-            </AIContent>
-          );
-        } else {
-          return (
-            <Button 
-              variant="primary" 
-              onClick={handleRequestAIActions}
-              disabled={journalText.trim().length < 20}
-            >
-              <span className="ai-icon">✅</span>
-              Suggest Actions
-            </Button>
-          );
-        }
-        
+        if (aiResults.actions) return <AIContent><p>{aiResults.actions}</p></AIContent>;
+        return <Button onClick={() => handleRequestAI(JOURNAL_AI_MODES.ACTIONS)}>Suggest Actions</Button>;
       case 'ask':
         return (
           <AIContent>
-            {aiResults.answer && (
-              <div className="suggestion">
-                <strong>Answer:</strong> {aiResults.answer}
-              </div>
-            )}
-            
+            {aiResults.answer && <div className="suggestion"><strong>Answer:</strong> {aiResults.answer}</div>}
             <AskAIForm>
-              <div className="form-header">Ask a question about your journal entry:</div>
               <div className="input-container">
-                <input 
-                  type="text" 
-                  value={askQuestion}
-                  onChange={(e) => setAskQuestion(e.target.value)}
-                  placeholder="e.g., What am I feeling about...?"
-                />
-                <button 
-                  onClick={handleAskAI}
-                  disabled={!askQuestion.trim() || journalText.trim().length < 20}
-                >
-                  Ask
-                </button>
+                <input type="text" value={askQuestion} onChange={(e) => setAskQuestion(e.target.value)} placeholder="Ask about your entry..." />
+                <button onClick={() => handleRequestAI(JOURNAL_AI_MODES.ASK)} disabled={!askQuestion.trim()}>Ask</button>
               </div>
             </AskAIForm>
           </AIContent>
         );
-        
       case 'rewrite':
         return (
           <AIContent>
-            {aiResults.rewrite && (
-              <div className="suggestion">
-                <strong>Rewritten Entry:</strong>
-                <p>{aiResults.rewrite}</p>
-              </div>
-            )}
-            
+            {aiResults.rewrite && <div className="suggestion"><strong>Rewritten:</strong><p>{aiResults.rewrite}</p></div>}
             <RewriteForm>
-              <div className="form-header">Select a tone for rewriting:</div>
               <div className="tone-options">
-                {['Positive', 'Reflective', 'Analytical', 'Grateful', 'Confident'].map(tone => (
-                  <button 
-                    key={tone}
-                    className="tone-option"
-                    style={{
-                      backgroundColor: selectedTone === tone ? '#C7A758' : 'transparent',
-                      color: selectedTone === tone ? '#1A1A1A' : undefined
-                    }}
-                    onClick={() => setSelectedTone(tone)}
-                  >
-                    {tone}
-                  </button>
+                {['Positive', 'Reflective', 'Grateful'].map(tone => (
+                  <button key={tone} className="tone-option" onClick={() => setSelectedTone(tone)} style={{ backgroundColor: selectedTone === tone ? '#C7A758' : undefined }}>{tone}</button>
                 ))}
               </div>
-              
-              <button 
-                onClick={handleRewriteEntry}
-                disabled={!selectedTone || journalText.trim().length < 20}
-              >
-                Rewrite Entry
-              </button>
+              <button onClick={() => handleRequestAI(JOURNAL_AI_MODES.REWRITE)} disabled={!selectedTone}>Rewrite</button>
             </RewriteForm>
           </AIContent>
         );
-        
-      default:
-        return null;
+      default: return null;
     }
   };
   
@@ -911,23 +782,26 @@ const Journal = () => {
       <JournalHeader>
         <JournalTitle>Journal</JournalTitle>
         <JournalActions>
+          <Button variant="secondary" onClick={handleNewEntry}>New Entry</Button>
           <Button 
             variant="primary"
             onClick={handleSave}
-            disabled={journalText.trim().length === 0}
+            disabled={dbLoading || journalText.trim().length === 0}
           >
-            Save Entry
+            {currentEntry ? 'Save Changes' : 'Save Entry'}
           </Button>
+          {currentEntry && <Button variant="primary" style={{backgroundColor: '#8A0303'}} onClick={handleDelete}>Delete</Button>}
         </JournalActions>
       </JournalHeader>
       
       <JournalContent>
         <EditorCard
+          key={currentEntry?.id || 'new'}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {loading && (
+          {(dbLoading || aiLoading) && (
             <LoadingOverlay>
               <LoadingSpinner />
             </LoadingOverlay>
@@ -940,26 +814,21 @@ const Journal = () => {
           />
           
           <EditorHeader>
-            <DateDisplay>{currentDate}</DateDisplay>
+            <DateDisplay>{currentEntry ? new Date(currentEntry.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Today'}</DateDisplay>
             <WordCount>{wordCount} words</WordCount>
           </EditorHeader>
           
           <EditorTextarea 
             value={journalText}
             onChange={handleTextChange}
-            placeholder="Write your thoughts here... How are you feeling today? What's on your mind?"
+            placeholder="Write your thoughts here..."
           />
           
           <TagsContainer>
             {tags.map(tag => (
               <Tag key={tag}>
                 #{tag}
-                <span 
-                  className="remove-tag" 
-                  onClick={() => handleRemoveTag(tag)}
-                >
-                  ✕
-                </span>
+                <span className="remove-tag" onClick={() => handleRemoveTag(tag)}>✕</span>
               </Tag>
             ))}
             <AddTagInput 
@@ -982,7 +851,7 @@ const Journal = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            {loading && (
+            {(dbLoading || aiLoading) && (
               <LoadingOverlay>
                 <LoadingSpinner />
               </LoadingOverlay>
@@ -994,36 +863,11 @@ const Journal = () => {
             </AIInsightsTitle>
             
             <AITabs>
-              <AITab 
-                active={activeAITab === 'insights'} 
-                onClick={() => setActiveAITab('insights')}
-              >
-                Insights
-              </AITab>
-              <AITab 
-                active={activeAITab === 'summary'} 
-                onClick={() => setActiveAITab('summary')}
-              >
-                Summary
-              </AITab>
-              <AITab 
-                active={activeAITab === 'actions'} 
-                onClick={() => setActiveAITab('actions')}
-              >
-                Actions
-              </AITab>
-              <AITab 
-                active={activeAITab === 'ask'} 
-                onClick={() => setActiveAITab('ask')}
-              >
-                Ask AI
-              </AITab>
-              <AITab 
-                active={activeAITab === 'rewrite'} 
-                onClick={() => setActiveAITab('rewrite')}
-              >
-                Rewrite
-              </AITab>
+              <AITab active={activeAITab === 'insights'} onClick={() => setActiveAITab('insights')}>Insights</AITab>
+              <AITab active={activeAITab === 'summary'} onClick={() => setActiveAITab('summary')}>Summary</AITab>
+              <AITab active={activeAITab === 'actions'} onClick={() => setActiveAITab('actions')}>Actions</AITab>
+              <AITab active={activeAITab === 'ask'} onClick={() => setActiveAITab('ask')}>Ask AI</AITab>
+              <AITab active={activeAITab === 'rewrite'} onClick={() => setActiveAITab('rewrite')}>Rewrite</AITab>
             </AITabs>
             
             {renderAIContent()}
@@ -1036,27 +880,23 @@ const Journal = () => {
           >
             <JournalHistoryTitle>Recent Entries</JournalHistoryTitle>
             
-            {journalEntries.length > 0 ? (
+            {dbLoading ? <LoadingSpinner /> : entries.length > 0 ? (
               <JournalEntryList>
-                {journalEntries.map(entry => (
-                  <JournalEntryItem key={entry.id} mood={entry.mood}>
-                    <div className="entry-date">
-                      {entry.title} - {new Date(entry.date).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric' 
-                      })}
-                    </div>
+                {entries.map(entry => (
+                  <JournalEntryItem
+                    key={entry.id}
+                    isSelected={currentEntry?.id === entry.id}
+                    onClick={() => handleSelectEntry(entry)}
+                  >
+                    <div className="entry-title">{entry.title || 'Untitled Entry'}</div>
                     <div className="entry-preview">{entry.content}</div>
-                    <div className="entry-mood">
-                      <div className="mood-indicator"></div>
-                      <span>{entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1)} mood • {entry.wordCount} words</span>
-                    </div>
+                    <div className="entry-date">{new Date(entry.created_at).toLocaleDateString()}</div>
                   </JournalEntryItem>
                 ))}
               </JournalEntryList>
             ) : (
               <EmptyHistoryState>
-                No journal entries yet. Start writing to build your history.
+                No journal entries yet. Start writing!
               </EmptyHistoryState>
             )}
           </JournalHistoryCard>

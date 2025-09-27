@@ -1,10 +1,4 @@
-/**
- * Client for the Journal AI service
- * This service provides AI-powered insights and analysis for journal entries
- */
-
-// Replace with your actual API endpoint
-const API_ENDPOINT = 'https://journal-ai-api.example.com';
+import { generateJsonWithGemini, generateWithGemini } from './geminiClient';
 
 /**
  * Available modes for the Journal AI service
@@ -18,83 +12,117 @@ export const JOURNAL_AI_MODES = {
 };
 
 /**
- * Process a journal entry with the Journal AI service
- * 
- * @param {string} mode - The processing mode (summarize, insights, actions, rewrite, ask)
- * @param {Object} journalData - The journal entry data
- * @param {string} journalData.title - The journal entry title
- * @param {string} journalData.content - The journal entry content
- * @param {number} journalData.mood - The mood rating (0-10)
- * @param {Array<string>} journalData.tags - Optional tags for the entry
- * @param {string} journalData.question - Question to ask (only for ASK mode)
- * @param {string} journalData.tone - Desired tone (only for REWRITE mode)
- * @returns {Promise<Object>} - The AI response
+ * Creates a base prompt with the user's journal data.
+ * @param {Object} journalData - The journal entry data.
+ * @returns {string} - A base prompt string.
+ */
+const createBasePrompt = (journalData) => {
+  return `
+    You are a compassionate and insightful AI journaling assistant.
+    Analyze the following journal entry:
+    - Title: "${journalData.title || 'Untitled'}"
+    - Content: "${journalData.content}"
+    - Mood Rating (0-100): ${journalData.mood}
+    - Tags: ${journalData.tags.length > 0 ? journalData.tags.join(', ') : 'None'}
+  `;
+};
+
+/**
+ * Process a journal entry with the Journal AI service using the Gemini API.
+ *
+ * @param {string} mode - The processing mode.
+ * @param {Object} journalData - The journal entry data.
+ * @returns {Promise<Object>} - The AI response.
  */
 export async function processJournalEntry(mode, journalData) {
+  const basePrompt = createBasePrompt(journalData);
+  let fullPrompt = '';
+  let useJsonOutput = true;
+
+  switch (mode) {
+    case JOURNAL_AI_MODES.SUMMARIZE:
+      fullPrompt = `
+        ${basePrompt}
+        Please provide a concise, one-paragraph summary of this journal entry.
+        
+        Respond with a JSON object in the following format:
+        {
+          "summary": "Your one-paragraph summary here."
+        }
+      `;
+      break;
+
+    case JOURNAL_AI_MODES.INSIGHTS:
+      fullPrompt = `
+        ${basePrompt}
+        Based on the entry, identify key emotional themes, potential cognitive patterns (like catastrophizing, black-and-white thinking, etc.), and underlying feelings.
+        
+        Respond with a JSON object in the following format:
+        {
+          "insights": "A bulleted or numbered list of 2-4 key insights. Frame them constructively and gently."
+        }
+      `;
+      break;
+
+    case JOURNAL_AI_MODES.ACTIONS:
+      fullPrompt = `
+        ${basePrompt}
+        Suggest 2-3 small, concrete, and actionable steps the user could take based on their entry. These should be practical and aimed at improving their situation or mindset.
+        
+        Respond with a JSON object in the following format:
+        {
+          "actions": "A bulleted or numbered list of 2-3 actionable suggestions."
+        }
+      `;
+      break;
+
+    case JOURNAL_AI_MODES.REWRITE:
+      fullPrompt = `
+        ${basePrompt}
+        The user wants to rewrite their entry with a different tone.
+        The desired tone is: "${journalData.tone}"
+
+        Rewrite the core message of the journal entry in this new tone, maintaining the original meaning but shifting the perspective.
+        
+        Respond with a JSON object in the following format:
+        {
+          "rewrite": "The rewritten journal entry text."
+        }
+      `;
+      break;
+
+    case JOURNAL_AI_MODES.ASK:
+      useJsonOutput = false; // This mode expects a direct text answer.
+      fullPrompt = `
+        ${basePrompt}
+        The user has a specific question about their entry. Answer it based *only* on the information provided in the journal entry itself. Do not invent information.
+        
+        User's question: "${journalData.question}"
+
+        Your answer:
+      `;
+      break;
+
+    default:
+      throw new Error(`Invalid journal AI mode: ${mode}`);
+  }
+
   try {
-    // Validate mode
-    if (!Object.values(JOURNAL_AI_MODES).includes(mode)) {
-      throw new Error(`Invalid mode: ${mode}`);
+    if (useJsonOutput) {
+      // For modes that expect a structured response
+      const result = await generateJsonWithGemini(fullPrompt);
+      if (result && !result.error) {
+        return result;
+      } else {
+        throw new Error('Received an invalid JSON response from the AI service.');
+      }
+    } else {
+      // For the 'ASK' mode, which expects a plain text response
+      const answer = await generateWithGemini(fullPrompt);
+      return { answer };
     }
-    
-    // In a real implementation, this would call the actual API endpoint
-    // For now, we'll simulate a response
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    
-    // Mock responses based on the mode
-    switch (mode) {
-      case JOURNAL_AI_MODES.SUMMARIZE:
-        return {
-          summary: "Feeling anxious about tomorrow's presentation despite preparation, worried about potential mistakes and judgment from colleagues."
-        };
-        
-      case JOURNAL_AI_MODES.INSIGHTS:
-        return {
-          insights: "1. You may be experiencing perfectionism, setting unrealistically high standards for yourself. 2. There's a pattern of catastrophizing, imagining worst-case scenarios that are unlikely to happen. 3. You're discounting your preparation and past successes."
-        };
-        
-      case JOURNAL_AI_MODES.ACTIONS:
-        return {
-          actions: "1. Practice your presentation once more, focusing on the sections you're most confident about to build momentum. 2. Schedule a 10-minute calming activity before bed (like deep breathing or gentle stretching) to help manage pre-presentation anxiety."
-        };
-        
-      case JOURNAL_AI_MODES.REWRITE:
-        return {
-          rewrite: "I've prepared thoroughly for tomorrow's presentation and have good knowledge of the material. While I feel some natural nervousness, I can channel this energy into enthusiasm. I'll focus on communicating clearly and remember that my colleagues are supportive."
-        };
-        
-      case JOURNAL_AI_MODES.ASK:
-        return {
-          answer: "Based on your entry, you've prepared extensively for the presentation by practicing multiple times and reviewing all the material. You mentioned going through it 'at least ten times' and 'knowing the content inside out.'"
-        };
-        
-      default:
-        throw new Error(`Unhandled mode: ${mode}`);
-    }
-    
-    /* 
-    // Real implementation would look like this:
-    const response = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        mode,
-        ...journalData
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-    */
   } catch (error) {
-    console.error('Error in journal AI service:', error);
+    console.error(`Error in journal AI service (mode: ${mode}):`, error);
     throw error;
   }
 }
