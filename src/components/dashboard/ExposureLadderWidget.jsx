@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 import { generateExposureLadder } from '../../services/exposureLadderClient';
 
 const LadderContainer = styled(motion.div)`
@@ -478,95 +480,116 @@ const StepDetails = styled.div`
   }
 `;
 
-// Sample data for a fear ladder
-const initialLadderSteps = [
-  {
-    id: 1,
-    title: 'Looking at pictures of spiders online',
-    description: 'Browse through images of small spiders on websites',
-    anxietyLevel: 3,
-    completed: true,
-    prep: 'Practice deep breathing for 1 minute before starting',
-    duration: 5,
-    success: 'Can view all images without looking away'
-  },
-  {
-    id: 2,
-    title: 'Watching videos of spiders',
-    description: 'Watch short nature videos featuring spiders',
-    anxietyLevel: 5,
-    completed: false,
-    prep: 'Remind yourself that you\'re safe and can stop anytime',
-    duration: 10,
-    success: 'Complete watching without pausing or muting'
-  },
-  {
-    id: 3,
-    title: 'Being in the same room as a spider in a closed container',
-    description: 'Have someone place a small spider in a sealed jar in the room',
-    anxietyLevel: 7,
-    completed: false,
-    prep: 'Use positive self-talk: "I am safe, it cannot reach me"',
-    duration: 15,
-    success: 'Remain in the room for the full duration'
-  },
-  {
-    id: 4,
-    title: 'Being in the same room as a free spider',
-    description: 'Stay in a room where a small spider is visible but at a distance',
-    anxietyLevel: 9,
-    completed: false,
-    prep: 'Remind yourself that most spiders are harmless and avoid humans',
-    duration: 20,
-    success: 'Remain in room without attempting to leave or kill spider'
-  },
-  {
-    id: 5,
-    title: 'Holding a small spider in your hand',
-    description: 'Allow a small, harmless spider to crawl on your hand',
-    anxietyLevel: 10,
-    completed: false,
-    prep: 'Practice slow breathing and remind yourself that you are in control',
-    duration: 1,
-    success: 'Hold position for at least 30 seconds'
-  }
-];
-
 const ExposureLadderWidget = () => {
-  const [fear, setFear] = useState('Fear of Spiders');
-  const [goal, setGoal] = useState('Be able to remain calm when encountering spiders');
+  const { user } = useAuth();
+
+  // DB state
+  const [activeLadder, setActiveLadder] = useState(null);
+  const [dbLoading, setDbLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Form state
+  const [fear, setFear] = useState('');
+  const [goal, setGoal] = useState('');
   const [constraints, setConstraints] = useState('');
   const [editingFear, setEditingFear] = useState(false);
-  const [ladderSteps, setLadderSteps] = useState(initialLadderSteps);
-  const [activeStep, setActiveStep] = useState(2);
+  const [ladderSteps, setLadderSteps] = useState([]);
+  const [activeStep, setActiveStep] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAiForm, setShowAiForm] = useState(false);
-  const [newStep, setNewStep] = useState({
-    title: '',
-    description: '',
-    anxietyLevel: 5,
-    prep: '',
-    duration: 10,
-    success: ''
-  });
+  const [newStep, setNewStep] = useState({ title: '', description: '', anxietyLevel: 5, prep: '', duration: 10, success: '' });
   const [editingStepId, setEditingStepId] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [aiNotes, setAiNotes] = useState('');
   const [safetyNote, setSafetyNote] = useState('');
   const [expandedStepId, setExpandedStepId] = useState(null);
-  
-  // Calculate progress
-  const completedSteps = ladderSteps.filter(step => step.completed).length;
-  const progress = (completedSteps / ladderSteps.length) * 100;
-  
-  // Handle step completion toggle
-  const toggleStepCompletion = (id) => {
-    setLadderSteps(ladderSteps.map(step => 
-      step.id === id ? { ...step, completed: !step.completed } : step
-    ));
+
+  const fetchLadder = useCallback(async () => {
+    if (!user) return;
+    setDbLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('exposure_ladders')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const ladder = data[0];
+        setActiveLadder(ladder);
+        setFear(ladder.fear_title || '');
+        setGoal(ladder.goal || '');
+        setConstraints(ladder.constraints || '');
+        setLadderSteps(ladder.steps || []);
+        setAiNotes(ladder.ai_notes || '');
+        setSafetyNote(ladder.safety_note || '');
+      } else {
+        // No ladder found, set to a default state
+        setActiveLadder(null);
+        setFear('Your Fear Here');
+        setGoal('');
+        setConstraints('');
+        setLadderSteps([]);
+        setAiNotes('');
+        setSafetyNote('');
+      }
+    } catch (error) {
+      console.error("Error fetching exposure ladder:", error);
+    } finally {
+      setDbLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchLadder();
+  }, [fetchLadder]);
+
+  const saveLadder = async (updatedSteps) => {
+    if (!user) return;
+    setDbLoading(true);
+
+    const ladderData = {
+      id: activeLadder?.id,
+      user_id: user.id,
+      fear_title: fear,
+      goal,
+      constraints,
+      steps: updatedSteps || ladderSteps,
+      ai_notes: aiNotes,
+      safety_note: safetyNote,
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('exposure_ladders')
+        .upsert(ladderData)
+        .select();
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setActiveLadder(data[0]);
+      }
+    } catch (error) {
+      console.error("Error saving ladder:", error);
+      alert("Failed to save ladder.");
+    } finally {
+      setDbLoading(false);
+    }
   };
-  
-  // Handle step edit
+
+  const completedSteps = ladderSteps.filter(step => step.completed).length;
+  const progress = ladderSteps.length > 0 ? (completedSteps / ladderSteps.length) * 100 : 0;
+
+  const toggleStepCompletion = (id) => {
+    const updatedSteps = ladderSteps.map(step =>
+      step.id === id ? { ...step, completed: !step.completed } : step
+    );
+    setLadderSteps(updatedSteps);
+    saveLadder(updatedSteps);
+  };
+
   const handleEditStep = (step) => {
     setNewStep({
       title: step.title,
@@ -579,83 +602,45 @@ const ExposureLadderWidget = () => {
     setEditingStepId(step.id);
     setShowAddForm(true);
   };
-  
-  // Handle step delete
+
   const handleDeleteStep = (id) => {
-    setLadderSteps(ladderSteps.filter(step => step.id !== id));
+    const updatedSteps = ladderSteps.filter(step => step.id !== id);
+    setLadderSteps(updatedSteps);
+    saveLadder(updatedSteps);
   };
-  
-  // Handle form submission
+
   const handleSubmitStep = (e) => {
     e.preventDefault();
-    
     if (newStep.title.trim() === '') return;
-    
+
+    let updatedSteps;
     if (editingStepId) {
-      // Update existing step
-      setLadderSteps(ladderSteps.map(step => 
-        step.id === editingStepId ? { 
-          ...step, 
-          title: newStep.title,
-          description: newStep.description,
-          anxietyLevel: newStep.anxietyLevel,
-          prep: newStep.prep,
-          duration: newStep.duration,
-          success: newStep.success
-        } : step
-      ));
-      setEditingStepId(null);
+      updatedSteps = ladderSteps.map(step =>
+        step.id === editingStepId ? { ...step, ...newStep } : step
+      );
     } else {
-      // Add new step
-      const newId = Math.max(0, ...ladderSteps.map(step => step.id)) + 1;
-      setLadderSteps([...ladderSteps, {
-        id: newId,
-        title: newStep.title,
-        description: newStep.description,
-        anxietyLevel: newStep.anxietyLevel,
-        completed: false,
-        prep: newStep.prep,
-        duration: newStep.duration,
-        success: newStep.success
-      }]);
+      const newId = ladderSteps.length > 0 ? Math.max(...ladderSteps.map(step => step.id)) + 1 : 1;
+      updatedSteps = [...ladderSteps, { ...newStep, id: newId, completed: false }];
     }
     
-    // Reset form
-    setNewStep({
-      title: '',
-      description: '',
-      anxietyLevel: 5,
-      prep: '',
-      duration: 10,
-      success: ''
-    });
-    setShowAddForm(false);
+    setLadderSteps(updatedSteps);
+    saveLadder(updatedSteps);
+    handleCancelForm();
   };
-  
-  // Cancel form
+
   const handleCancelForm = () => {
-    setNewStep({
-      title: '',
-      description: '',
-      anxietyLevel: 5,
-      prep: '',
-      duration: 10,
-      success: ''
-    });
+    setNewStep({ title: '', description: '', anxietyLevel: 5, prep: '', duration: 10, success: '' });
     setEditingStepId(null);
     setShowAddForm(false);
   };
-  
-  // Generate ladder with AI
+
   const handleGenerateLadder = async () => {
     if (!fear.trim()) return;
-    
-    setLoading(true);
+    setAiLoading(true);
     try {
       const result = await generateExposureLadder(fear, goal, constraints);
       
       if (result.ladder && result.ladder.length > 0) {
-        // Transform the AI response into our ladder step format
         const newSteps = result.ladder.map((step, index) => ({
           id: index + 1,
           title: step.title,
@@ -672,24 +657,37 @@ const ExposureLadderWidget = () => {
         setAiNotes(result.notes || '');
         setSafetyNote(result.safety_note || '');
         setActiveStep(1);
+
+        // Save this new ladder to the database
+        const newLadderData = {
+          user_id: user.id,
+          fear_title: fear,
+          goal,
+          constraints,
+          steps: newSteps,
+          ai_notes: result.notes || '',
+          safety_note: result.safety_note || '',
+        };
+
+        const { data, error } = await supabase.from('exposure_ladders').upsert(newLadderData).select();
+        if (error) throw error;
+        if (data && data.length > 0) setActiveLadder(data[0]);
       }
-      
       setShowAiForm(false);
     } catch (error) {
       console.error('Error generating ladder:', error);
     } finally {
-      setLoading(false);
+      setAiLoading(false);
     }
   };
-  
-  // Toggle step details
+
   const toggleStepDetails = (id) => {
-    if (expandedStepId === id) {
-      setExpandedStepId(null);
-    } else {
-      setExpandedStepId(id);
-    }
+    setExpandedStepId(expandedStepId === id ? null : id);
   };
+
+  if (dbLoading) {
+    return <LadderContainer><LoadingSpinner /></LadderContainer>;
+  }
   
   return (
     <LadderContainer
@@ -697,11 +695,7 @@ const ExposureLadderWidget = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      {loading && (
-        <LoadingOverlay>
-          <LoadingSpinner />
-        </LoadingOverlay>
-      )}
+      {(dbLoading || aiLoading) && <LoadingOverlay><LoadingSpinner /></LoadingOverlay>}
       
       <LadderTitle>
         <span className="ladder-icon">🪜</span>
@@ -716,25 +710,29 @@ const ExposureLadderWidget = () => {
         <FearInput 
           value={fear}
           onChange={(e) => setFear(e.target.value)}
-          onBlur={() => setEditingFear(false)}
-          onKeyPress={(e) => e.key === 'Enter' && setEditingFear(false)}
+          onBlur={() => { setEditingFear(false); saveLadder(); }}
+          onKeyPress={(e) => { if (e.key === 'Enter') { setEditingFear(false); saveLadder(); }}}
           autoFocus
         />
       ) : (
         <FearTitle>
-          {fear}
+          {fear || 'No Fear Title'}
           <button className="edit-button" onClick={() => setEditingFear(true)}>
             Edit
           </button>
         </FearTitle>
       )}
       
-      <ProgressBar>
-        <ProgressFill progress={progress} />
-      </ProgressBar>
-      <ProgressText>
-        {completedSteps} of {ladderSteps.length} steps completed ({Math.round(progress)}%)
-      </ProgressText>
+      {ladderSteps.length > 0 && (
+        <>
+          <ProgressBar>
+            <ProgressFill progress={progress} />
+          </ProgressBar>
+          <ProgressText>
+            {completedSteps} of {ladderSteps.length} steps completed ({Math.round(progress)}%)
+          </ProgressText>
+        </>
+      )}
       
       <ButtonGroup style={{ justifyContent: 'flex-start', marginBottom: '1.5rem' }}>
         <AiButton 
@@ -744,6 +742,7 @@ const ExposureLadderWidget = () => {
           <span className="ai-icon">🧠</span>
           Generate with AI
         </AiButton>
+        <Button variant="secondary" onClick={() => saveLadder()}>Save Ladder</Button>
       </ButtonGroup>
       
       {showAiForm && (
@@ -751,83 +750,34 @@ const ExposureLadderWidget = () => {
           <h4>Generate Exposure Ladder with AI</h4>
           <FormGroup>
             <Label htmlFor="fear-input">What are you afraid of?</Label>
-            <Input 
-              id="fear-input"
-              value={fear}
-              onChange={(e) => setFear(e.target.value)}
-              placeholder="e.g., Fear of public speaking"
-            />
+            <Input id="fear-input" value={fear} onChange={(e) => setFear(e.target.value)} placeholder="e.g., Fear of public speaking" />
           </FormGroup>
-          
           <FormGroup>
             <Label htmlFor="goal-input">What's your goal? (optional)</Label>
-            <Input 
-              id="goal-input"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              placeholder="e.g., Be able to give presentations comfortably"
-            />
+            <Input id="goal-input" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g., Be able to give presentations comfortably" />
           </FormGroup>
-          
           <FormGroup>
             <Label htmlFor="constraints-input">Any constraints or context? (optional)</Label>
-            <TextArea 
-              id="constraints-input"
-              value={constraints}
-              onChange={(e) => setConstraints(e.target.value)}
-              placeholder="e.g., I need to give a presentation at work in 3 weeks"
-            />
+            <TextArea id="constraints-input" value={constraints} onChange={(e) => setConstraints(e.target.value)} placeholder="e.g., I need to give a presentation at work in 3 weeks" />
           </FormGroup>
-          
           <ButtonGroup>
-            <Button onClick={() => setShowAiForm(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="primary" 
-              onClick={handleGenerateLadder}
-              disabled={!fear.trim()}
-            >
-              Generate Ladder
-            </Button>
+            <Button onClick={() => setShowAiForm(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleGenerateLadder} disabled={!fear.trim()}>Generate Ladder</Button>
           </ButtonGroup>
         </AiGenerateForm>
       )}
       
-      {aiNotes && (
-        <NotesSection>
-          <h5>Notes:</h5>
-          <p>{aiNotes}</p>
-        </NotesSection>
-      )}
+      {aiNotes && <NotesSection><h5>Notes:</h5><p>{aiNotes}</p></NotesSection>}
+      {safetyNote && <SafetyNote><h5>Safety Note:</h5><p>{safetyNote}</p></SafetyNote>}
       
-      {safetyNote && (
-        <SafetyNote>
-          <h5>Safety Note:</h5>
-          <p>{safetyNote}</p>
-        </SafetyNote>
-      )}
-      
-      <LadderSteps>
-        {ladderSteps
-          .sort((a, b) => a.anxietyLevel - b.anxietyLevel)
-          .map(step => (
-            <LadderStep 
-              key={step.id}
-              active={activeStep === step.id}
-              completed={step.completed}
-              onClick={() => setActiveStep(step.id)}
-            >
-              <StepNumber 
-                active={activeStep === step.id}
-                completed={step.completed}
-              >
+      {ladderSteps.length > 0 ? (
+        <LadderSteps>
+          {ladderSteps.sort((a, b) => a.anxietyLevel - b.anxietyLevel).map(step => (
+            <LadderStep key={step.id} active={activeStep === step.id} completed={step.completed} onClick={() => setActiveStep(step.id)}>
+              <StepNumber active={activeStep === step.id} completed={step.completed}>
                 {step.completed ? '✓' : step.anxietyLevel}
               </StepNumber>
-              <StepContent 
-                completed={step.completed}
-                hasAnxiety={!step.completed}
-              >
+              <StepContent completed={step.completed} hasAnxiety={!step.completed}>
                 <div className="step-description">{step.title}</div>
                 {!step.completed && (
                   <div className="step-anxiety">
@@ -838,81 +788,31 @@ const ExposureLadderWidget = () => {
                 {step.description && (
                   <div className="step-details">
                     {step.description}
-                    <button 
-                      style={{ 
-                        background: 'none', 
-                        border: 'none', 
-                        color: '#C7A758', 
-                        fontSize: '0.8rem',
-                        padding: '0 0 0 0.5rem',
-                        cursor: 'pointer'
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleStepDetails(step.id);
-                      }}
-                    >
+                    <button style={{ background: 'none', border: 'none', color: '#C7A758', fontSize: '0.8rem', padding: '0 0 0 0.5rem', cursor: 'pointer' }}
+                      onClick={(e) => { e.stopPropagation(); toggleStepDetails(step.id); }}>
                       {expandedStepId === step.id ? 'Hide details' : 'Show details'}
                     </button>
                   </div>
                 )}
-                
                 {expandedStepId === step.id && (
                   <StepDetails>
-                    {step.prep && (
-                      <div className="detail-item">
-                        <div className="detail-label">Preparation:</div>
-                        <div className="detail-value">{step.prep}</div>
-                      </div>
-                    )}
-                    {step.duration && (
-                      <div className="detail-item">
-                        <div className="detail-label">Duration:</div>
-                        <div className="detail-value">{step.duration} minutes</div>
-                      </div>
-                    )}
-                    {step.success && (
-                      <div className="detail-item">
-                        <div className="detail-label">Success when:</div>
-                        <div className="detail-value">{step.success}</div>
-                      </div>
-                    )}
+                    {step.prep && <div className="detail-item"><div className="detail-label">Preparation:</div><div className="detail-value">{step.prep}</div></div>}
+                    {step.duration && <div className="detail-item"><div className="detail-label">Duration:</div><div className="detail-value">{step.duration} minutes</div></div>}
+                    {step.success && <div className="detail-item"><div className="detail-label">Success when:</div><div className="detail-value">{step.success}</div></div>}
                   </StepDetails>
                 )}
               </StepContent>
               <StepActions>
-                <button 
-                  className="complete-button"
-                  title={step.completed ? "Mark as incomplete" : "Mark as complete"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleStepCompletion(step.id);
-                  }}
-                >
-                  {step.completed ? '✓' : '○'}
-                </button>
-                <button 
-                  title="Edit step"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEditStep(step);
-                  }}
-                >
-                  ✎
-                </button>
-                <button 
-                  title="Delete step"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteStep(step.id);
-                  }}
-                >
-                  🗑️
-                </button>
+                <button className="complete-button" title={step.completed ? "Mark as incomplete" : "Mark as complete"} onClick={(e) => { e.stopPropagation(); toggleStepCompletion(step.id); }}>{step.completed ? '✓' : '○'}</button>
+                <button title="Edit step" onClick={(e) => { e.stopPropagation(); handleEditStep(step); }}>✎</button>
+                <button title="Delete step" onClick={(e) => { e.stopPropagation(); handleDeleteStep(step.id); }}>🗑️</button>
               </StepActions>
             </LadderStep>
           ))}
-      </LadderSteps>
+        </LadderSteps>
+      ) : (
+        <p>No ladder steps yet. Add a step manually or generate one with AI to get started.</p>
+      )}
       
       {showAddForm ? (
         <StepForm>
@@ -920,85 +820,37 @@ const ExposureLadderWidget = () => {
           <form onSubmit={handleSubmitStep}>
             <FormGroup>
               <Label htmlFor="step-title">Step Title</Label>
-              <Input 
-                id="step-title"
-                value={newStep.title}
-                onChange={(e) => setNewStep({...newStep, title: e.target.value})}
-                placeholder="Brief title for this step..."
-                required
-              />
+              <Input id="step-title" value={newStep.title} onChange={(e) => setNewStep({...newStep, title: e.target.value})} placeholder="Brief title for this step..." required />
             </FormGroup>
-            
             <FormGroup>
               <Label htmlFor="step-description">Description (optional)</Label>
-              <TextArea 
-                id="step-description"
-                value={newStep.description}
-                onChange={(e) => setNewStep({...newStep, description: e.target.value})}
-                placeholder="Describe what you'll do in this step..."
-              />
+              <TextArea id="step-description" value={newStep.description} onChange={(e) => setNewStep({...newStep, description: e.target.value})} placeholder="Describe what you'll do in this step..." />
             </FormGroup>
-            
             <FormGroup>
               <Label htmlFor="anxiety-level">Anxiety Level (1-10)</Label>
               <AnxietySlider value={newStep.anxietyLevel}>
                 <div className="slider-container">
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="10" 
-                    value={newStep.anxietyLevel}
-                    onChange={(e) => setNewStep({...newStep, anxietyLevel: parseInt(e.target.value)})}
-                    className="slider"
-                  />
+                  <input type="range" min="1" max="10" value={newStep.anxietyLevel} onChange={(e) => setNewStep({...newStep, anxietyLevel: parseInt(e.target.value)})} className="slider" />
                   <div className="slider-value">{newStep.anxietyLevel}</div>
                 </div>
-                <div className="slider-labels">
-                  <span>Mild</span>
-                  <span>Moderate</span>
-                  <span>Severe</span>
-                </div>
+                <div className="slider-labels"><span>Mild</span><span>Moderate</span><span>Severe</span></div>
               </AnxietySlider>
             </FormGroup>
-            
             <FormGroup>
               <Label htmlFor="step-prep">Preparation (optional)</Label>
-              <Input 
-                id="step-prep"
-                value={newStep.prep}
-                onChange={(e) => setNewStep({...newStep, prep: e.target.value})}
-                placeholder="How will you prepare for this step?"
-              />
+              <Input id="step-prep" value={newStep.prep} onChange={(e) => setNewStep({...newStep, prep: e.target.value})} placeholder="How will you prepare for this step?" />
             </FormGroup>
-            
             <FormGroup>
               <Label htmlFor="step-duration">Duration (minutes)</Label>
-              <Input 
-                id="step-duration"
-                type="number"
-                min="1"
-                value={newStep.duration}
-                onChange={(e) => setNewStep({...newStep, duration: parseInt(e.target.value)})}
-              />
+              <Input id="step-duration" type="number" min="1" value={newStep.duration} onChange={(e) => setNewStep({...newStep, duration: parseInt(e.target.value)})} />
             </FormGroup>
-            
             <FormGroup>
               <Label htmlFor="step-success">Success Criteria (optional)</Label>
-              <Input 
-                id="step-success"
-                value={newStep.success}
-                onChange={(e) => setNewStep({...newStep, success: e.target.value})}
-                placeholder="How will you know you've succeeded?"
-              />
+              <Input id="step-success" value={newStep.success} onChange={(e) => setNewStep({...newStep, success: e.target.value})} placeholder="How will you know you've succeeded?" />
             </FormGroup>
-            
             <ButtonGroup>
-              <Button type="button" onClick={handleCancelForm}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary">
-                {editingStepId ? 'Update Step' : 'Add Step'}
-              </Button>
+              <Button type="button" onClick={handleCancelForm}>Cancel</Button>
+              <Button type="submit" variant="primary">{editingStepId ? 'Update Step' : 'Add Step'}</Button>
             </ButtonGroup>
           </form>
         </StepForm>
