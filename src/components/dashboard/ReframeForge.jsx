@@ -1,7 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 import { getReframe } from '../../services/reframeForgeClient';
+
+const ForgeWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+`;
 
 const ForgeContainer = styled(motion.div)`
   background-color: ${({ theme }) => theme.colors.background.medium};
@@ -11,6 +19,7 @@ const ForgeContainer = styled(motion.div)`
   display: flex;
   flex-direction: column;
   box-shadow: ${({ theme }) => theme.shadows.medium};
+  position: relative;
 `;
 
 const ForgeTitle = styled.h3`
@@ -173,6 +182,7 @@ const Button = styled.button`
     background-color: ${({ theme }) => theme.colors.secondary};
     border-color: ${({ theme }) => theme.colors.secondary};
     cursor: not-allowed;
+    opacity: 0.5;
   }
 `;
 
@@ -335,70 +345,130 @@ const AiAssistButton = styled(Button)`
   }
 `;
 
-// Cognitive distortion patterns
-const thoughtPatterns = [
-  {
-    id: 1,
-    name: 'All-or-Nothing Thinking',
-    description: 'Seeing things in black and white categories'
-  },
-  {
-    id: 2,
-    name: 'Overgeneralization',
-    description: 'Viewing a negative event as a never-ending pattern'
-  },
-  {
-    id: 3,
-    name: 'Mental Filter',
-    description: 'Focusing on a single negative detail'
-  },
-  {
-    id: 4,
-    name: 'Discounting the Positive',
-    description: 'Rejecting positive experiences'
-  },
-  {
-    id: 5,
-    name: 'Jumping to Conclusions',
-    description: 'Making negative interpretations without facts'
-  },
-  {
-    id: 6,
-    name: 'Catastrophizing',
-    description: 'Expecting disaster; magnifying problems'
+const HistoryCard = styled(ForgeContainer)`
+  margin-top: 2rem;
+`;
+
+const HistoryList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+`;
+
+const HistoryItem = styled.div`
+  padding: 0.75rem;
+  background-color: ${({ theme }) => theme.colors.background.dark};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  cursor: pointer;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
   }
+
+  .history-thought {
+    font-weight: 500;
+    color: ${({ theme }) => theme.colors.text.primary};
+    margin-bottom: 0.25rem;
+  }
+
+  .history-date {
+    font-size: 0.8rem;
+    color: ${({ theme }) => theme.colors.text.muted};
+  }
+`;
+
+const thoughtPatterns = [
+  { id: 1, name: 'All-or-Nothing Thinking', description: 'Seeing things in black and white categories' },
+  { id: 2, name: 'Overgeneralization', description: 'Viewing a negative event as a never-ending pattern' },
+  { id: 3, name: 'Mental Filter', description: 'Focusing on a single negative detail' },
+  { id: 4, name: 'Discounting the Positive', description: 'Rejecting positive experiences' },
+  { id: 5, name: 'Jumping to Conclusions', description: 'Making negative interpretations without facts' },
+  { id: 6, name: 'Catastrophizing', description: 'Expecting disaster; magnifying problems' }
 ];
 
 const ReframeForge = () => {
+  const { user } = useAuth();
+
+  // Component state
   const [currentStep, setCurrentStep] = useState(1);
   const [negativeThought, setNegativeThought] = useState('');
   const [selectedPatterns, setSelectedPatterns] = useState([]);
   const [reframedThought, setReframedThought] = useState('');
   const [completed, setCompleted] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [aiResult, setAiResult] = useState(null);
   const [context, setContext] = useState('');
-  
+
+  // DB and AI state
+  const [dbLoading, setDbLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+  const [pastReframes, setPastReframes] = useState([]);
+
+  const fetchReframes = useCallback(async () => {
+    if (!user) return;
+    setDbLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('reframes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setPastReframes(data);
+    } catch (error) {
+      console.error("Error fetching reframes:", error);
+    } finally {
+      setDbLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchReframes();
+  }, [fetchReframes]);
+
   const handlePatternToggle = (patternId) => {
-    if (selectedPatterns.includes(patternId)) {
-      setSelectedPatterns(selectedPatterns.filter(id => id !== patternId));
-    } else {
-      setSelectedPatterns([...selectedPatterns, patternId]);
+    setSelectedPatterns(prev =>
+      prev.includes(patternId) ? prev.filter(id => id !== patternId) : [...prev, patternId]
+    );
+  };
+
+  const handleSaveReframe = async () => {
+    if (!user) return;
+    setDbLoading(true);
+
+    const reframeData = {
+      user_id: user.id,
+      negative_thought: negativeThought,
+      context: context,
+      cognitive_distortions: getSelectedPatternNames().split(', '),
+      reframed_thought: aiResult ? aiResult.balanced_reframe : reframedThought,
+      ai_analysis: aiResult,
+    };
+
+    try {
+      const { error } = await supabase.from('reframes').insert(reframeData);
+      if (error) throw error;
+      await fetchReframes(); // Refresh history
+    } catch (error) {
+      console.error("Error saving reframe:", error);
+      alert("Failed to save reframe.");
+    } finally {
+      setDbLoading(false);
     }
   };
-  
+
   const handleNextStep = () => {
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
     } else {
       setCompleted(true);
+      handleSaveReframe();
     }
   };
   
   const handlePrevStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
+    if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
   
   const handleReset = () => {
@@ -413,335 +483,170 @@ const ReframeForge = () => {
   
   const isStepComplete = (step) => {
     switch (step) {
-      case 1:
-        return negativeThought.trim().length > 0;
-      case 2:
-        return selectedPatterns.length > 0 || aiResult;
-      case 3:
-        return reframedThought.trim().length > 0 || aiResult;
-      default:
-        return false;
+      case 1: return negativeThought.trim().length > 0;
+      case 2: return selectedPatterns.length > 0 || aiResult;
+      case 3: return (reframedThought.trim().length > 0 && !aiResult) || aiResult;
+      default: return false;
     }
   };
   
   const getSelectedPatternNames = () => {
-    if (aiResult && aiResult.distortions) {
-      return aiResult.distortions.join(', ');
-    }
-    
+    if (aiResult && aiResult.distortions) return aiResult.distortions.join(', ');
     return selectedPatterns
-      .map(id => thoughtPatterns.find(pattern => pattern.id === id)?.name)
+      .map(id => thoughtPatterns.find(p => p.id === id)?.name)
       .filter(Boolean)
       .join(', ');
   };
   
   const handleAiAssist = async () => {
     if (!negativeThought.trim()) return;
-    
-    setLoading(true);
+    setAiLoading(true);
     try {
       const result = await getReframe(negativeThought, context);
       setAiResult(result);
-      
-      // If we're on step 2 or 3, we can auto-fill the reframed thought
       if (currentStep >= 2) {
-        // Find pattern IDs that match the AI-identified distortions
-        const matchedPatternIds = [];
-        if (result.distortions) {
-          result.distortions.forEach(distortion => {
-            const pattern = thoughtPatterns.find(p => 
-              p.name.toLowerCase() === distortion.toLowerCase()
-            );
-            if (pattern) matchedPatternIds.push(pattern.id);
-          });
-        }
-        
-        if (matchedPatternIds.length > 0) {
-          setSelectedPatterns(matchedPatternIds);
-        }
+        const matchedPatternIds = result.distortions?.map(distortion =>
+          thoughtPatterns.find(p => p.name.toLowerCase() === distortion.toLowerCase())?.id
+        ).filter(Boolean) || [];
+        if (matchedPatternIds.length > 0) setSelectedPatterns(matchedPatternIds);
       }
-      
       if (currentStep >= 3) {
         setReframedThought(result.balanced_reframe || '');
       }
-      
     } catch (error) {
       console.error('Error getting AI reframe:', error);
     } finally {
-      setLoading(false);
+      setAiLoading(false);
     }
   };
-  
+
+  const viewHistoryItem = (item) => {
+    setNegativeThought(item.negative_thought);
+    setContext(item.context || '');
+    setReframedThought(item.reframed_thought || '');
+    setAiResult(item.ai_analysis);
+    setSelectedPatterns(item.cognitive_distortions?.map(d =>
+      thoughtPatterns.find(p => p.name === d)?.id).filter(Boolean) || []);
+    setCompleted(true);
+  };
+
   return (
-    <ForgeContainer
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      style={{ position: 'relative' }}
-    >
-      {loading && (
-        <LoadingOverlay>
-          <LoadingSpinner />
-        </LoadingOverlay>
-      )}
-      
-      <ForgeTitle>
-        <span className="forge-icon">🔥</span>
-        Reframe Forge
-      </ForgeTitle>
-      
-      <ForgeDescription>
-        Transform negative thoughts into balanced perspectives using cognitive behavioral techniques.
-      </ForgeDescription>
-      
-      {!completed ? (
-        <ForgeSteps>
-          <ForgeStep>
-            <StepHeader>
-              <StepNumber active={currentStep === 1}>1</StepNumber>
-              <StepTitle active={currentStep === 1}>Identify the Negative Thought</StepTitle>
-            </StepHeader>
-            
-            {currentStep === 1 && (
-              <StepContent>
-                <TextArea 
-                  value={negativeThought}
-                  onChange={(e) => setNegativeThought(e.target.value)}
-                  placeholder="Write down the negative thought that's bothering you..."
-                />
-                
-                <TextArea 
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  placeholder="Optional: Add some context about the situation..."
-                  style={{ marginTop: '1rem', minHeight: '80px' }}
-                />
-                
-                <ButtonGroup>
-                  <AiAssistButton 
-                    onClick={handleAiAssist}
-                    disabled={!negativeThought.trim()}
-                  >
-                    <span className="ai-icon">🧠</span>
-                    AI Assist
-                  </AiAssistButton>
-                  
-                  <Button 
-                    variant="primary" 
-                    onClick={handleNextStep}
-                    disabled={!isStepComplete(1)}
-                  >
-                    Next
-                  </Button>
-                </ButtonGroup>
-              </StepContent>
-            )}
-          </ForgeStep>
-          
-          <ForgeStep>
-            <StepHeader>
-              <StepNumber active={currentStep === 2}>2</StepNumber>
-              <StepTitle active={currentStep === 2}>Identify Thought Patterns</StepTitle>
-            </StepHeader>
-            
-            {currentStep === 2 && (
-              <StepContent>
-                {aiResult ? (
-                  <div>
-                    <h5>AI-Identified Thought Patterns:</h5>
-                    <ul>
-                      {aiResult.distortions.map((distortion, index) => (
-                        <li key={index}>{distortion}</li>
-                      ))}
-                    </ul>
-                    
-                    <EvidenceSection type="for">
-                      <h5>Evidence Supporting the Thought:</h5>
-                      <ul>
-                        {aiResult.evidence_for.map((evidence, index) => (
-                          <li key={index}>{evidence}</li>
-                        ))}
-                      </ul>
-                    </EvidenceSection>
-                    
-                    <EvidenceSection type="against">
-                      <h5>Evidence Against the Thought:</h5>
-                      <ul>
-                        {aiResult.evidence_against.map((evidence, index) => (
-                          <li key={index}>{evidence}</li>
-                        ))}
-                      </ul>
-                    </EvidenceSection>
-                  </div>
-                ) : (
-                  <ThoughtPatterns>
-                    {thoughtPatterns.map(pattern => (
-                      <PatternButton 
-                        key={pattern.id}
-                        selected={selectedPatterns.includes(pattern.id)}
-                        onClick={() => handlePatternToggle(pattern.id)}
-                      >
-                        <div className="pattern-name">{pattern.name}</div>
-                        <div className="pattern-description">{pattern.description}</div>
-                      </PatternButton>
-                    ))}
-                  </ThoughtPatterns>
-                )}
-                
-                <ButtonGroup>
-                  <Button onClick={handlePrevStep}>
-                    Back
-                  </Button>
-                  
-                  {!aiResult && (
-                    <AiAssistButton 
-                      onClick={handleAiAssist}
-                      disabled={!negativeThought.trim()}
-                    >
-                      <span className="ai-icon">🧠</span>
-                      AI Assist
-                    </AiAssistButton>
-                  )}
-                  
-                  <Button 
-                    variant="primary" 
-                    onClick={handleNextStep}
-                    disabled={!isStepComplete(2)}
-                  >
-                    Next
-                  </Button>
-                </ButtonGroup>
-              </StepContent>
-            )}
-          </ForgeStep>
-          
-          <ForgeStep>
-            <StepHeader>
-              <StepNumber active={currentStep === 3}>3</StepNumber>
-              <StepTitle active={currentStep === 3}>Create Balanced Thought</StepTitle>
-            </StepHeader>
-            
-            {currentStep === 3 && (
-              <StepContent>
-                {aiResult ? (
-                  <div>
-                    <h5>AI-Generated Balanced Thought:</h5>
-                    <p>{aiResult.balanced_reframe}</p>
-                    
-                    {aiResult.tiny_action && (
-                      <TinyAction>
-                        <div className="action-header">Suggested Action:</div>
-                        <div className="action-content">{aiResult.tiny_action}</div>
-                      </TinyAction>
-                    )}
-                    
-                    {aiResult.safety_note && (
-                      <SafetyNote>
-                        <div className="note-header">Important Note:</div>
-                        <div className="note-content">{aiResult.safety_note}</div>
-                      </SafetyNote>
-                    )}
-                  </div>
-                ) : (
-                  <TextArea 
-                    value={reframedThought}
-                    onChange={(e) => setReframedThought(e.target.value)}
-                    placeholder="Rewrite your thought in a more balanced, realistic way..."
-                  />
-                )}
-                
-                <ButtonGroup>
-                  <Button onClick={handlePrevStep}>
-                    Back
-                  </Button>
-                  
-                  {!aiResult && (
-                    <AiAssistButton 
-                      onClick={handleAiAssist}
-                      disabled={!negativeThought.trim()}
-                    >
-                      <span className="ai-icon">🧠</span>
-                      AI Assist
-                    </AiAssistButton>
-                  )}
-                  
-                  <Button 
-                    variant="primary" 
-                    onClick={handleNextStep}
-                    disabled={!isStepComplete(3)}
-                  >
-                    Complete
-                  </Button>
-                </ButtonGroup>
-              </StepContent>
-            )}
-          </ForgeStep>
-        </ForgeSteps>
-      ) : (
-        <CompletedView>
-          <BeforeAfterContainer>
-            <ThoughtBox type="before">
-              <div className="thought-header">Original Thought</div>
-              <div className="thought-content">{negativeThought}</div>
-              <div className="thought-pattern">
-                Patterns: {getSelectedPatternNames()}
-              </div>
-              
-              {aiResult && (
-                <>
-                  <EvidenceSection type="for">
-                    <h5>Evidence Supporting:</h5>
-                    <ul>
-                      {aiResult.evidence_for.map((evidence, index) => (
-                        <li key={index}>{evidence}</li>
-                      ))}
-                    </ul>
-                  </EvidenceSection>
-                </>
+    <ForgeWrapper>
+      <ForgeContainer
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        {(dbLoading || aiLoading) && <LoadingOverlay><LoadingSpinner /></LoadingOverlay>}
+
+        <ForgeTitle>
+          <span className="forge-icon">🔥</span>
+          Reframe Forge
+        </ForgeTitle>
+
+        <ForgeDescription>
+          Transform negative thoughts into balanced perspectives using cognitive behavioral techniques.
+        </ForgeDescription>
+
+        {!completed ? (
+          <ForgeSteps>
+            <ForgeStep>
+              <StepHeader><StepNumber active={currentStep === 1}>1</StepNumber><StepTitle active={currentStep === 1}>Identify the Negative Thought</StepTitle></StepHeader>
+              {currentStep === 1 && (
+                <StepContent>
+                  <TextArea value={negativeThought} onChange={(e) => setNegativeThought(e.target.value)} placeholder="Write down the negative thought..." />
+                  <TextArea value={context} onChange={(e) => setContext(e.target.value)} placeholder="Optional: Add context..." style={{ marginTop: '1rem', minHeight: '80px' }} />
+                  <ButtonGroup>
+                    <AiAssistButton onClick={handleAiAssist} disabled={!negativeThought.trim() || aiLoading}><span className="ai-icon">🧠</span> AI Assist</AiAssistButton>
+                    <Button variant="primary" onClick={handleNextStep} disabled={!isStepComplete(1)}>Next</Button>
+                  </ButtonGroup>
+                </StepContent>
               )}
-            </ThoughtBox>
+            </ForgeStep>
             
-            <ThoughtBox type="after">
-              <div className="thought-header">Reframed Thought</div>
-              <div className="thought-content">
-                {aiResult ? aiResult.balanced_reframe : reframedThought}
-              </div>
-              
-              {aiResult && (
-                <>
-                  <EvidenceSection type="against">
-                    <h5>Evidence Against:</h5>
-                    <ul>
-                      {aiResult.evidence_against.map((evidence, index) => (
-                        <li key={index}>{evidence}</li>
-                      ))}
-                    </ul>
-                  </EvidenceSection>
-                  
-                  {aiResult.tiny_action && (
-                    <TinyAction>
-                      <div className="action-header">Next Step:</div>
-                      <div className="action-content">{aiResult.tiny_action}</div>
-                    </TinyAction>
+            <ForgeStep>
+              <StepHeader><StepNumber active={currentStep === 2}>2</StepNumber><StepTitle active={currentStep === 2}>Identify Thought Patterns</StepTitle></StepHeader>
+              {currentStep === 2 && (
+                <StepContent>
+                  {aiResult ? (
+                    <div>
+                      <h5>AI-Identified Patterns:</h5>
+                      <ul>{aiResult.distortions.map((d, i) => <li key={i}>{d}</li>)}</ul>
+                      <EvidenceSection type="for"><h5>Evidence For:</h5><ul>{aiResult.evidence_for.map((e, i) => <li key={i}>{e}</li>)}</ul></EvidenceSection>
+                      <EvidenceSection type="against"><h5>Evidence Against:</h5><ul>{aiResult.evidence_against.map((e, i) => <li key={i}>{e}</li>)}</ul></EvidenceSection>
+                    </div>
+                  ) : (
+                    <ThoughtPatterns>
+                      {thoughtPatterns.map(p => <PatternButton key={p.id} selected={selectedPatterns.includes(p.id)} onClick={() => handlePatternToggle(p.id)}><div className="pattern-name">{p.name}</div><div className="pattern-description">{p.description}</div></PatternButton>)}
+                    </ThoughtPatterns>
                   )}
-                </>
+                  <ButtonGroup>
+                    <Button onClick={handlePrevStep}>Back</Button>
+                    {!aiResult && <AiAssistButton onClick={handleAiAssist} disabled={!negativeThought.trim() || aiLoading}><span className="ai-icon">🧠</span> AI Assist</AiAssistButton>}
+                    <Button variant="primary" onClick={handleNextStep} disabled={!isStepComplete(2)}>Next</Button>
+                  </ButtonGroup>
+                </StepContent>
               )}
-            </ThoughtBox>
-          </BeforeAfterContainer>
-          
-          {aiResult && aiResult.safety_note && (
-            <SafetyNote>
-              <div className="note-header">Important Note:</div>
-              <div className="note-content">{aiResult.safety_note}</div>
-            </SafetyNote>
-          )}
-          
-          <ResetButton onClick={handleReset}>
-            Create New Reframe
-          </ResetButton>
-        </CompletedView>
+            </ForgeStep>
+
+            <ForgeStep>
+              <StepHeader><StepNumber active={currentStep === 3}>3</StepNumber><StepTitle active={currentStep === 3}>Create Balanced Thought</StepTitle></StepHeader>
+              {currentStep === 3 && (
+                <StepContent>
+                  {aiResult ? (
+                    <div>
+                      <h5>AI-Generated Balanced Thought:</h5><p>{aiResult.balanced_reframe}</p>
+                      {aiResult.tiny_action && <TinyAction><div className="action-header">Suggested Action:</div><div className="action-content">{aiResult.tiny_action}</div></TinyAction>}
+                      {aiResult.safety_note && <SafetyNote><div className="note-header">Note:</div><div className="note-content">{aiResult.safety_note}</div></SafetyNote>}
+                    </div>
+                  ) : (
+                    <TextArea value={reframedThought} onChange={(e) => setReframedThought(e.target.value)} placeholder="Rewrite your thought in a more balanced way..." />
+                  )}
+                  <ButtonGroup>
+                    <Button onClick={handlePrevStep}>Back</Button>
+                    {!aiResult && <AiAssistButton onClick={handleAiAssist} disabled={!negativeThought.trim() || aiLoading}><span className="ai-icon">🧠</span> AI Assist</AiAssistButton>}
+                    <Button variant="primary" onClick={handleNextStep} disabled={!isStepComplete(3)}>Complete</Button>
+                  </ButtonGroup>
+                </StepContent>
+              )}
+            </ForgeStep>
+          </ForgeSteps>
+        ) : (
+          <CompletedView>
+            <BeforeAfterContainer>
+              <ThoughtBox type="before">
+                <div className="thought-header">Original Thought</div>
+                <div className="thought-content">{negativeThought}</div>
+                <div className="thought-pattern">Patterns: {getSelectedPatternNames()}</div>
+                {aiResult && <EvidenceSection type="for"><h5>Evidence For:</h5><ul>{aiResult.evidence_for.map((e, i) => <li key={i}>{e}</li>)}</ul></EvidenceSection>}
+              </ThoughtBox>
+              <ThoughtBox type="after">
+                <div className="thought-header">Reframed Thought</div>
+                <div className="thought-content">{aiResult ? aiResult.balanced_reframe : reframedThought}</div>
+                {aiResult && <EvidenceSection type="against"><h5>Evidence Against:</h5><ul>{aiResult.evidence_against.map((e, i) => <li key={i}>{e}</li>)}</ul></EvidenceSection>}
+                {aiResult?.tiny_action && <TinyAction><div className="action-header">Next Step:</div><div className="action-content">{aiResult.tiny_action}</div></TinyAction>}
+              </ThoughtBox>
+            </BeforeAfterContainer>
+            {aiResult?.safety_note && <SafetyNote><div className="note-header">Note:</div><div className="note-content">{aiResult.safety_note}</div></SafetyNote>}
+            <ResetButton onClick={handleReset}>Create New Reframe</ResetButton>
+          </CompletedView>
+        )}
+      </ForgeContainer>
+
+      {pastReframes.length > 0 && (
+        <HistoryCard>
+          <ForgeTitle>Recent Reframes</ForgeTitle>
+          <HistoryList>
+            {pastReframes.map(item => (
+              <HistoryItem key={item.id} onClick={() => viewHistoryItem(item)}>
+                <div className="history-thought">{item.negative_thought}</div>
+                <div className="history-date">{new Date(item.created_at).toLocaleDateString()}</div>
+              </HistoryItem>
+            ))}
+          </HistoryList>
+        </HistoryCard>
       )}
-    </ForgeContainer>
+    </ForgeWrapper>
   );
 };
 

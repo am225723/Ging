@@ -1,22 +1,21 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Component to protect routes that require authentication
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { currentUser, isAdmin } = useAuth();
-  const location = useLocation();
+  const { user } = useAuth();
 
-  // If user is not logged in, redirect to login page
-  if (!currentUser) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!user) {
+    // If the user is not logged in, redirect them to the login page
+    return <Navigate to="/login" />;
   }
 
-  // If route requires admin but user is not admin, redirect to dashboard
-  if (requireAdmin && !isAdmin()) {
-    return <Navigate to="/dashboard" replace />;
+  // If the route requires admin privileges and the user is not an admin,
+  // redirect them to the main dashboard.
+  if (requireAdmin && user.user_metadata?.role !== 'admin') {
+    return <Navigate to="/dashboard" />;
   }
 
-  // If user is authenticated and has required permissions, render the children
+  // If the user is authenticated and has the required permissions, render the child components
   return children;
 };
 
