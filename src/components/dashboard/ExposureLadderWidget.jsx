@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { supabase } from '../../services/supabaseClient';
 import { generateExposureLadder } from '../../services/exposureLadderClient';
 
@@ -482,6 +483,7 @@ const StepDetails = styled.div`
 
 const ExposureLadderWidget = () => {
   const { user } = useAuth();
+  const addToast = useToast();
 
   // DB state
   const [activeLadder, setActiveLadder] = useState(null);
@@ -640,6 +642,10 @@ const ExposureLadderWidget = () => {
     try {
       const result = await generateExposureLadder(fear, goal, constraints);
       
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
       if (result.ladder && result.ladder.length > 0) {
         const newSteps = result.ladder.map((step, index) => ({
           id: index + 1,
@@ -676,6 +682,7 @@ const ExposureLadderWidget = () => {
       setShowAiForm(false);
     } catch (error) {
       console.error('Error generating ladder:', error);
+      addToast('Failed to generate exposure ladder. Please try again.', 'error');
     } finally {
       setAiLoading(false);
     }
