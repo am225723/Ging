@@ -89,8 +89,8 @@ function App() {
             {/* 404 route */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </AuthProvider>
-      </Router>
+        </Router>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

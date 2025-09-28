@@ -125,7 +125,7 @@ const knightRanks = [
 ];
 
 const KnightDisplay = () => {
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const [level, setLevel] = useState(2);
   const [xp, setXp] = useState(75);
   const [xpToNextLevel, setXpToNextLevel] = useState(100);
@@ -159,7 +159,7 @@ const KnightDisplay = () => {
       </KnightFigure>
       
       <KnightInfo>
-        <KnightName>{user?.user_metadata?.name || user?.email || 'Ashen One'}</KnightName>
+        <KnightName>{currentUser?.name || 'Ashen One'}</KnightName>
         <KnightRank>{knightRank}</KnightRank>
         
         <div>

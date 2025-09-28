@@ -12,7 +12,6 @@ import AnchorWidget from '../components/dashboard/AnchorWidget';
 import ExposureLadderWidget from '../components/dashboard/ExposureLadderWidget';
 import MoodGauge from '../components/dashboard/MoodGauge';
 
-
 // Dashboard components
 const DashboardContainer = styled.div`
   display: flex;
@@ -80,6 +79,7 @@ const Dashboard = () => {
   const [mood, setMood] = useState(50);
   
   useEffect(() => {
+    // Simulate loading data
     const timer = setTimeout(() => {
       setLoading(false);
     }, 1000);
