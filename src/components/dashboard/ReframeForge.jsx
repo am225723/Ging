@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { supabase } from '../../services/supabaseClient';
 import { getReframe } from '../../services/reframeForgeClient';
 
@@ -391,6 +392,7 @@ const thoughtPatterns = [
 
 const ReframeForge = () => {
   const { user } = useAuth();
+  const addToast = useToast();
 
   // Component state
   const [currentStep, setCurrentStep] = useState(1);
@@ -503,6 +505,9 @@ const ReframeForge = () => {
     setAiLoading(true);
     try {
       const result = await getReframe(negativeThought, context);
+      if (result.error) {
+        throw new Error(result.error);
+      }
       setAiResult(result);
       if (currentStep >= 2) {
         const matchedPatternIds = result.distortions?.map(distortion =>
@@ -515,6 +520,7 @@ const ReframeForge = () => {
       }
     } catch (error) {
       console.error('Error getting AI reframe:', error);
+      addToast('AI analysis failed. Please check your connection or API key and try again.', 'error');
     } finally {
       setAiLoading(false);
     }

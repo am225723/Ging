@@ -3,6 +3,7 @@ import { ThemeProvider } from 'styled-components';
 import { theme } from './styles/theme';
 import GlobalStyles from './styles/GlobalStyles';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 // Layout
@@ -23,12 +24,13 @@ function App() {
     <ThemeProvider theme={theme}>
       <GlobalStyles />
       <AuthProvider>
-        <Router>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<Login />} />
-            
-            {/* Protected routes with layout */}
+        <ToastProvider>
+          <Router>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/login" element={<Login />} />
+
+              {/* Protected routes with layout */}
             <Route element={
               <ProtectedRoute>
                 <AppLayout />
@@ -71,8 +73,9 @@ function App() {
             
             {/* 404 route */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Router>
+            </Routes>
+          </Router>
+        </ToastProvider>
       </AuthProvider>
     </ThemeProvider>
   );
