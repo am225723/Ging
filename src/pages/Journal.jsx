@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../services/supabaseClient';
 import MoodGauge from '../components/dashboard/MoodGauge';
 import { processJournalEntry, JOURNAL_AI_MODES } from '../services/journalAiClient';
@@ -534,6 +535,7 @@ const RewriteForm = styled.div`
 
 const Journal = () => {
   const { user } = useAuth();
+  const addToast = useToast();
 
   // State for the list of entries
   const [entries, setEntries] = useState([]);
@@ -702,6 +704,10 @@ const Journal = () => {
         tone: selectedTone,
       });
 
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
       setAiResults(prev => ({ ...prev, ...result }));
 
       // If we have an entry, save the AI results to the database
@@ -711,17 +717,20 @@ const Journal = () => {
         if(result.summary) updateData.ai_summary = result.summary;
         if(result.actions) updateData.ai_actions = result.actions;
 
-        const { error } = await supabase
-          .from('journal_entries')
-          .update(updateData)
-          .eq('id', currentEntry.id);
+        if (Object.keys(updateData).length > 0) {
+          const { error } = await supabase
+            .from('journal_entries')
+            .update(updateData)
+            .eq('id', currentEntry.id);
 
-        if (error) throw error;
-        await fetchEntries(); // Refresh data
+          if (error) throw error;
+          await fetchEntries(); // Refresh data
+        }
       }
 
     } catch (error) {
       console.error(`Error getting AI ${mode}:`, error);
+      addToast(`AI ${mode} failed. Please try again.`, 'error');
     } finally {
       setAiLoading(false);
     }
