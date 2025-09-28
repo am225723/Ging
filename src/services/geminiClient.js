@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Access the API key from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -18,7 +18,7 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 export async function generateWithGemini(prompt) {
   try {
     // For text-only input, use the gemini-pro model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -40,7 +40,7 @@ export async function generateWithGemini(prompt) {
 export async function generateJsonWithGemini(prompt) {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-pro",
+      model: "gemini-1.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       },

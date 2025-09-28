@@ -39,8 +39,8 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <GlobalStyles />
-      <Router>
-        <AuthProvider>
+      <AuthProvider>
+        <Router>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
@@ -63,19 +63,19 @@ function App() {
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/admin/users" element={
                 <ProtectedRoute requireAdmin={true}>
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/admin/content" element={
                 <ProtectedRoute requireAdmin={true}>
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
-              
+
               <Route path="/admin/settings" element={
                 <ProtectedRoute requireAdmin={true}>
                   <AdminDashboard />
