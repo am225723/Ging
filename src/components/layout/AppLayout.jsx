@@ -43,7 +43,7 @@ const ContentWrapper = styled.div`
 
 const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { currentUser } = useAuth();
+  const { user } = useAuth();
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
