@@ -31,11 +31,11 @@ const SafeActions = styled.div`
 const Button = styled(motion.button)`
   padding: 0.75rem 1.5rem;
   background-color: ${({ theme, variant }) => 
-    variant === 'primary' ? theme.colors.evo.primary : 
+    variant === 'primary' ? theme.colors.primary :
     variant === 'secondary' ? 'transparent' : theme.colors.accent};
   color: ${({ theme }) => theme.colors.text.primary};
   border: ${({ theme, variant }) => 
-    variant === 'secondary' ? `1px solid ${theme.colors.evo.primary}` : 'none'};
+    variant === 'secondary' ? `1px solid ${theme.colors.primary}` : 'none'};
   border-radius: ${({ theme }) => theme.borderRadius.small};
   font-family: ${({ theme }) => theme.fonts.primary};
   font-size: 0.9rem;
@@ -47,7 +47,7 @@ const Button = styled(motion.button)`
   
   &:hover {
     background-color: ${({ theme, variant }) => 
-      variant === 'primary' ? theme.colors.evo.secondary : 
+      variant === 'primary' ? theme.colors.accent :
       variant === 'secondary' ? 'rgba(30, 50, 100, 0.1)' : theme.colors.accent};
     transform: translateY(-2px);
   }
@@ -116,7 +116,7 @@ const FileItem = styled.div`
     margin-right: 1rem;
     color: ${({ theme, type }) => 
       type === 'image' ? theme.colors.accent : 
-      type === 'document' ? theme.colors.evo.primary : 
+      type === 'document' ? theme.colors.primary :
       theme.colors.text.primary};
   }
   
@@ -199,7 +199,7 @@ const NoteItem = styled.div`
   border-radius: ${({ theme }) => theme.borderRadius.small};
   border-left: 3px solid ${({ theme, color }) => 
     color === 'yellow' ? theme.colors.accent : 
-    color === 'blue' ? theme.colors.evo.primary : 
+    color === 'blue' ? theme.colors.primary :
     color === 'red' ? theme.colors.primary : 
     theme.colors.secondary};
   
