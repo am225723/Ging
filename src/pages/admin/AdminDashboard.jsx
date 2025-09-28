@@ -79,7 +79,7 @@ const StatCard = styled(motion.div)`
     color: ${({ theme, color }) => 
       color === 'primary' ? theme.colors.primary :
       color === 'accent' ? theme.colors.accent :
-      color === 'evo' ? theme.colors.primary :
+      color === 'evo' ? theme.colors.evo.primary :
       theme.colors.text.primary};
     font-family: ${({ theme }) => theme.fonts.primary};
   }
