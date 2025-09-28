@@ -2,12 +2,23 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Access the API key from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') ? new GoogleGenerativeAI(API_KEY) : null;
 
-if (!API_KEY) {
-  throw new Error("VITE_GEMINI_API_KEY is not set in your environment variables. Please add it to your .env file.");
-}
+const handleApiError = (error) => {
+  console.error("Gemini API Error:", error);
+  const errorMessage = error.toString();
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+  if (errorMessage.includes('API key not valid')) {
+    return 'Your Gemini API key is not valid. Please check it in your .env file.';
+  }
+  if (errorMessage.includes('429')) {
+    return 'You have exceeded your API quota. Please check your Gemini account.';
+  }
+  if (errorMessage.includes('Could not parse response')) {
+    return 'The AI returned an invalid response. Please try again.';
+  }
+  return 'An unknown error occurred with the AI service. Please check your connection.';
+};
 
 /**
  * Generates content using the Gemini Pro model.
@@ -16,18 +27,16 @@ const genAI = new GoogleGenerativeAI(API_KEY);
  * @returns {Promise<string>} The generated text.
  */
 export async function generateWithGemini(prompt) {
+  if (!genAI) {
+    throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
+  }
   try {
-    // For text-only input, use the gemini-pro model
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text();
-    return text;
+    return response.text();
   } catch (error) {
-    console.error("Error generating content with Gemini:", error);
-    // Return a more user-friendly error message or handle it as needed
-    return "Sorry, I was unable to generate a response at this time. Please ensure your API key is valid and has the necessary permissions.";
+    throw new Error(handleApiError(error));
   }
 }
 
@@ -38,6 +47,9 @@ export async function generateWithGemini(prompt) {
  * @returns {Promise<Object>} The generated JSON object.
  */
 export async function generateJsonWithGemini(prompt) {
+  if (!genAI) {
+    throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
+  }
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
@@ -50,12 +62,12 @@ export async function generateJsonWithGemini(prompt) {
     const response = await result.response;
     const text = response.text();
 
-    // The response text should be a valid JSON string.
-    // We'll parse it to ensure it's valid JSON before returning.
     return JSON.parse(text);
   } catch (error) {
-    console.error("Error generating JSON with Gemini:", error);
-    // In case of an error (e.g., invalid JSON response), return a default or error object
-    return { error: "Failed to generate a valid JSON response. Please check the prompt and API key." };
+    if (error instanceof SyntaxError) {
+      console.error("Error parsing JSON from Gemini:", error);
+      throw new Error("The AI returned an invalid JSON response. Please try rephrasing your request.");
+    }
+    throw new Error(handleApiError(error));
   }
 }
