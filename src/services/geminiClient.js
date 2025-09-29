@@ -33,8 +33,9 @@ export async function generateWithGemini(prompt) {
   if (!genAI) {
     throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
   }
-  try {
+  try { fix-ai-analysis-error
     // BUG FIX: Updated from gemini-1.5-flash to gemini-2.0-flash
+main
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
