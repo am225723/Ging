@@ -12,6 +12,7 @@ const CarIcon = () => <span>🚗</span>;
 const CharactersIcon = () => <span>🎭</span>;
 const JournalIcon = () => <span>📓</span>;
 const SafeIcon = () => <span>🔒</span>;
+const AiIcon = () => <span>🤖</span>;
 
 const SidebarContainer = styled(motion.aside)`
   width: ${({ isOpen }) => (isOpen ? '250px' : '70px')};
@@ -172,6 +173,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             <SafeIcon />
           </IconWrapper>
           <NavText isOpen={isOpen}>Secure Garage</NavText>
+        </NavItem>
+        
+        <NavItem to="/ai-settings" isOpen={isOpen}>
+          <IconWrapper>
+            <AiIcon />
+          </IconWrapper>
+          <NavText isOpen={isOpen}>AI Settings</NavText>
         </NavItem>
         
         {isAdmin && (
