@@ -17,11 +17,14 @@ const handleApiError = (error) => {
   if (errorMessage.includes('Could not parse response')) {
     return 'The AI returned an invalid response. Please try again.';
   }
+  if (errorMessage.includes('404') && errorMessage.includes('not found')) {
+    return 'The AI model is not available. Please check if the model name is correct.';
+  }
   return 'An unknown error occurred with the AI service. Please check your connection.';
 };
 
 /**
- * Generates content using the Gemini Pro model.
+ * Generates content using the Gemini 2.0 Flash model.
  *
  * @param {string} prompt The text prompt to send to the model.
  * @returns {Promise<string>} The generated text.
@@ -30,7 +33,9 @@ export async function generateWithGemini(prompt) {
   if (!genAI) {
     throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
   }
-  try {
+  try { fix-ai-analysis-error
+    // BUG FIX: Updated from gemini-1.5-flash to gemini-2.0-flash
+main
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -41,7 +46,7 @@ export async function generateWithGemini(prompt) {
 }
 
 /**
- * Generates a structured JSON response using the Gemini Pro model.
+ * Generates a structured JSON response using the Gemini 2.0 Flash model.
  *
  * @param {string} prompt The text prompt describing the desired JSON structure.
  * @returns {Promise<Object>} The generated JSON object.
@@ -51,6 +56,7 @@ export async function generateJsonWithGemini(prompt) {
     throw new Error("Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.");
   }
   try {
+    // BUG FIX: Updated from gemini-1.5-flash to gemini-2.0-flash
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash",
       generationConfig: {
