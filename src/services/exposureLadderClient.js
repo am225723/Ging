@@ -26,13 +26,8 @@ export async function generateExposureLadder(fear, goal = '', constraints = '') 
       throw new Error(`Edge function invocation failed: ${error.message}`);
     }
 
-    // The function now returns the full ladder object from the database,
-    // which contains the steps, notes, and safety_note.
-    return {
-      ladder: data.steps,
-      notes: data.ai_notes,
-      safety_note: data.safety_note,
-    };
+    // The function now returns the full ladder object from the database
+    return data;
   } catch (error) {
     console.error('Error in exposure ladder service:', error);
     return { error: error.message || 'An unexpected error occurred.' };

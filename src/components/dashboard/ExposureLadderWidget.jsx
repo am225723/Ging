@@ -640,49 +640,29 @@ const ExposureLadderWidget = () => {
     if (!fear.trim()) return;
     setAiLoading(true);
     try {
-      const result = await generateExposureLadder(fear, goal, constraints);
-      
-      if (result.error) {
-        throw new Error(result.error);
+      const newLadder = await generateExposureLadder(fear, goal, constraints);
+
+      if (newLadder.error) {
+        throw new Error(newLadder.error);
       }
 
-      if (result.ladder && result.ladder.length > 0) {
-        const newSteps = result.ladder.map((step, index) => ({
-          id: index + 1,
-          title: step.title,
-          description: step.action,
-          anxietyLevel: step.suds_start,
-          completed: false,
-          prep: step.prep,
-          duration: step.duration_min,
-          success: step.success_criteria,
-          suds_target: step.suds_target
-        }));
-        
-        setLadderSteps(newSteps);
-        setAiNotes(result.notes || '');
-        setSafetyNote(result.safety_note || '');
-        setActiveStep(1);
-
-        // Save this new ladder to the database
-        const newLadderData = {
-          user_id: user.id,
-          fear_title: fear,
-          goal,
-          constraints,
-          steps: newSteps,
-          ai_notes: result.notes || '',
-          safety_note: result.safety_note || '',
-        };
-
-        const { data, error } = await supabase.from('exposure_ladders').upsert(newLadderData).select();
-        if (error) throw error;
-        if (data && data.length > 0) setActiveLadder(data[0]);
+      // The backend now returns the full ladder object, already saved.
+      // We can use it to directly update the state.
+      if (newLadder && newLadder.steps) {
+        setActiveLadder(newLadder);
+        setFear(newLadder.fear_title || "");
+        setGoal(newLadder.goal || "");
+        setConstraints(newLadder.constraints || "");
+        setLadderSteps(newLadder.steps || []);
+        setAiNotes(newLadder.ai_notes || "");
+        setSafetyNote(newLadder.safety_note || "");
+        setActiveStep(newLadder.steps[0]?.id || 1);
       }
+
       setShowAiForm(false);
     } catch (error) {
-      console.error('Error generating ladder:', error);
-      addToast('Failed to generate exposure ladder. Please try again.', 'error');
+      console.error("Error generating ladder:", error);
+      addToast("Failed to generate exposure ladder. Please try again.", "error");
     } finally {
       setAiLoading(false);
     }
