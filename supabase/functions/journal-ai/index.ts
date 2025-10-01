@@ -1,3 +1,6 @@
+// FIXED VERSION: supabase/functions/journal-ai/index.ts
+// This version includes proper JSON response configuration and robust error handling
+
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.42.0";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -22,17 +25,88 @@ const getPrompt = (mode: string, journalData: any) => {
 
   switch (mode) {
     case 'summarize':
-      return `${basePrompt}\n\nPlease provide a concise, one-paragraph summary. Respond with a JSON object: {"summary": "Your summary here."}`;
+      return `${basePrompt}
+
+Please provide a concise, one-paragraph summary of the main themes and emotions in this entry.
+
+Return your response as a JSON object with this exact structure:
+{
+  "summary": "Your one-paragraph summary here"
+}`;
+
     case 'insights':
-      return `${basePrompt}\n\nIdentify key emotional themes and cognitive patterns. Respond with a JSON object: {"insights": "Your bulleted list of insights here."}`;
+      return `${basePrompt}
+
+Identify 3-5 key emotional themes, cognitive patterns, or recurring thoughts in this entry. 
+Present them as clear, actionable insights.
+
+Return your response as a JSON object with this exact structure:
+{
+  "insights": "• First insight\n• Second insight\n• Third insight"
+}`;
+
     case 'actions':
-      return `${basePrompt}\n\nSuggest 2-3 small, actionable steps. Respond with a JSON object: {"actions": "Your bulleted list of actions here."}`;
+      return `${basePrompt}
+
+Based on this journal entry, suggest 2-3 small, concrete, actionable steps the user could take.
+These should be specific and achievable within the next 24-48 hours.
+
+Return your response as a JSON object with this exact structure:
+{
+  "actions": "1. First action step\n2. Second action step\n3. Third action step"
+}`;
+
     case 'ask':
-      return `${basePrompt}\n\nAnswer the user's question based only on the entry: "${journalData.question}". Respond with a JSON object: {"answer": "Your answer here."}`;
+      return `${basePrompt}
+
+The user has asked the following question about their entry:
+"${journalData.question}"
+
+Answer their question based on the content of their journal entry. Be supportive and insightful.
+
+Return your response as a JSON object with this exact structure:
+{
+  "answer": "Your answer to their question here"
+}`;
+
     case 'rewrite':
-      return `${basePrompt}\n\nRewrite the entry in a "${journalData.tone}" tone. Respond with a JSON object: {"rewrite": "Your rewritten text here."}`;
+      return `${basePrompt}
+
+Rewrite this journal entry in a "${journalData.tone}" tone while preserving the core meaning and emotions.
+Keep the same general length and structure.
+
+Return your response as a JSON object with this exact structure:
+{
+  "rewrite": "The rewritten journal entry here"
+}`;
+
     default:
       throw new Error(`Invalid mode: ${mode}`);
+  }
+};
+
+// Helper function to parse JSON from AI response
+const parseAIResponse = (rawText: string): any => {
+  try {
+    // Remove markdown code blocks if present
+    let cleanedText = rawText.trim();
+    cleanedText = cleanedText.replace(/```json\n?/g, '');
+    cleanedText = cleanedText.replace(/```\n?/g, '');
+    cleanedText = cleanedText.trim();
+    
+    // Parse JSON
+    const parsed = JSON.parse(cleanedText);
+    
+    // Validate that we got an object
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('AI response is not a valid JSON object');
+    }
+    
+    return parsed;
+  } catch (error) {
+    console.error('JSON Parse Error:', error);
+    console.error('Raw text:', rawText);
+    throw new Error(`Failed to parse AI response as JSON: ${error.message}`);
   }
 };
 
@@ -42,55 +116,90 @@ serve(async (req) => {
   }
 
   try {
-    const { mode, entry, journalData } = await req.json();
+    const { mode, journalData } = await req.json();
 
+    // Authenticate user
     const authHeader = req.headers.get("Authorization")!;
     const { data: { user } } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
     if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      });
     }
 
+    // Validate input
     if (!journalData?.content) {
-      return new Response(JSON.stringify({ error: "Missing content" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Missing journal content" }), { 
+        status: 400, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      });
     }
 
+    if (!mode) {
+      return new Response(JSON.stringify({ error: "Missing mode parameter" }), { 
+        status: 400, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      });
+    }
+
+    // Generate prompt
     const prompt = getPrompt(mode, journalData);
+
+    // Call Gemini API with JSON response configuration
     const geminiResponse = await fetch(GEMINI_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({ 
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      }),
     });
 
     if (!geminiResponse.ok) {
       const errorBody = await geminiResponse.text();
-      throw new Error(`Gemini API failed: ${errorBody}`);
+      console.error('Gemini API Error:', errorBody);
+      throw new Error(`Gemini API failed with status ${geminiResponse.status}: ${errorBody}`);
     }
+
     const geminiData = await geminiResponse.json();
-    const rawText = geminiData.candidates[0].content.parts[0].text;
-    const ai_result = JSON.parse(rawText.trim());
-
-    // If an existing entry was passed, update it with the new AI data
-    if (entry?.id) {
-      const updateData: { [key: string]: any } = {};
-      if (ai_result.summary) updateData.ai_summary = ai_result.summary;
-      if (ai_result.insights) updateData.ai_insights = ai_result.insights;
-      if (ai_result.actions) updateData.ai_actions = ai_result.actions;
-
-      if (Object.keys(updateData).length > 0) {
-        const { error: updateError } = await supabase
-          .from("journal_entries")
-          .update(updateData)
-          .eq("id", entry.id);
-        if (updateError) throw updateError;
-      }
+    
+    // Validate response structure
+    if (!geminiData.candidates || !geminiData.candidates[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid response structure from Gemini API');
     }
 
+    const rawText = geminiData.candidates[0].content.parts[0].text;
+    const ai_result = parseAIResponse(rawText);
+
+    // Validate that the response has the expected key for the mode
+    const expectedKeys = {
+      'summarize': 'summary',
+      'insights': 'insights',
+      'actions': 'actions',
+      'ask': 'answer',
+      'rewrite': 'rewrite'
+    };
+
+    const expectedKey = expectedKeys[mode];
+    if (expectedKey && !ai_result[expectedKey]) {
+      throw new Error(`AI response missing expected key: ${expectedKey}`);
+    }
+
+    // Return the AI result directly
+    // Note: Database updates are handled by the frontend
     return new Response(JSON.stringify(ai_result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
+
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Journal AI Error:', error);
+    return new Response(JSON.stringify({ 
+      error: error.message || 'An unexpected error occurred' 
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
