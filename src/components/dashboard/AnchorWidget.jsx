@@ -1,206 +1,650 @@
-// NEW IMPLEMENTATION: AI-powered mantra generation for Anchor Widget
-// This includes both the service client and updated component code
-
-// ============================================================================
-// FILE 1: src/services/anchorClient.js
-// ============================================================================
-
-import { generateJsonWithGemini } from './geminiClient';
-
-/**
- * Generates personalized grounding mantras using AI
- * @param {string} context - Optional context about user's current state
- * @param {number} count - Number of mantras to generate (default: 7)
- * @returns {Promise<Array<string>>} Array of mantra suggestions
- */
-export async function suggestAnchors(context = '', count = 7) {
-  const prompt = `
-You are a compassionate mindfulness coach and expert in grounding techniques. Generate ${count} short, calming grounding mantras or "anchors" for someone experiencing anxiety, stress, or overwhelm.
-
-${context ? `Context about the user's current state: ${context}` : ''}
-
-**Requirements for each mantra:**
-- 3-8 words long
-- Use present tense and positive language
-- Focus on safety, calm, presence, and grounding
-- Be creative and avoid clichés
-- Use compassionate, supportive tone
-- Vary the themes (safety, breath, presence, strength, acceptance)
-
-**Return your response as a JSON array of strings:**
-["Mantra 1", "Mantra 2", "Mantra 3", ...]
-
-**Example mantras:**
-- "I am safe enough right now"
-- "This wave will pass through me"
-- "I can ride this moment"
-- "My breath is my anchor"
-- "I am here, I am present"
-
-**Return ONLY the JSON array, no additional text or markdown formatting.**
-`;
-
-  try {
-    const result = await generateJsonWithGemini(prompt);
-    
-    // Validate response is an array
-    if (!Array.isArray(result)) {
-      throw new Error('AI returned invalid format - expected array');
-    }
-    
-    // Validate array has items
-    if (result.length === 0) {
-      throw new Error('AI returned empty array');
-    }
-    
-    // Validate all items are strings
-    if (!result.every(item => typeof item === 'string')) {
-      throw new Error('AI returned non-string items in array');
-    }
-    
-    return result;
-  } catch (error) {
-    console.error('Error generating anchors:', error);
-    throw error;
-  }
-}
-
-// ============================================================================
-// FILE 2: Updated src/components/dashboard/AnchorWidget.jsx
-// Add these imports and modifications to the existing file
-// ============================================================================
-
-// ADD THIS IMPORT at the top:
+import { useState } from 'react';
+import styled from 'styled-components';
+import { motion } from 'framer-motion';
 import { suggestAnchors } from '../../services/anchorClient';
 
-// ADD THESE STATE VARIABLES in the component (around line 450):
-const [aiLoading, setAiLoading] = useState(false);
-const [aiSuggestions, setAiSuggestions] = useState([]);
-const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+const AnchorContainer = styled(motion.div)`
+  background-color: ${({ theme }) => theme.colors.background.medium};
+  border-radius: ${({ theme }) => theme.borderRadius.medium};
+  border: 1px solid ${({ theme }) => theme.colors.secondary};
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: ${({ theme }) => theme.shadows.medium};
+`;
 
-// ADD THIS HANDLER FUNCTION:
-const handleGenerateAnchors = async () => {
-  setAiLoading(true);
-  try {
-    const suggestions = await suggestAnchors('', 7);
-    setAiSuggestions(suggestions);
-    setShowAiSuggestions(true);
-  } catch (error) {
-    console.error('Error generating anchors:', error);
-    // You can add toast notification here if you have useToast
-    alert('Failed to generate AI mantras. Please try again.');
-  } finally {
-    setAiLoading(false);
+const AnchorTitle = styled.h3`
+  font-size: 1.25rem;
+  margin: 0 0 1rem 0;
+  color: ${({ theme }) => theme.colors.accent};
+  font-family: ${({ theme }) => theme.fonts.primary};
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  .anchor-icon {
+    font-size: 1rem;
   }
+`;
+
+const AnchorDescription = styled.p`
+  font-size: 0.9rem;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+`;
+
+const TechniqueSelector = styled.div`
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+`;
+
+const TechniqueButton = styled.button`
+  padding: 0.5rem 1rem;
+  background-color: ${({ theme, active }) => 
+    active ? theme.colors.accent : 'transparent'};
+  color: ${({ theme, active }) => 
+    active ? theme.colors.background.dark : theme.colors.text.secondary};
+  border: 1px solid ${({ theme, active }) => 
+    active ? theme.colors.accent : theme.colors.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all ${({ theme }) => theme.transitions.fast};
+  
+  &:hover {
+    background-color: ${({ theme, active }) => 
+      active ? theme.colors.accent : 'rgba(199, 167, 88, 0.1)'};
+    color: ${({ theme, active }) => 
+      active ? theme.colors.background.dark : theme.colors.accent};
+  }
+`;
+
+const SensesExercise = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`;
+
+const SenseStep = styled.div`
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+`;
+
+const SenseNumber = styled.div`
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background-color: ${({ theme, completed }) => 
+    completed ? 'rgba(77, 126, 62, 0.2)' : 'rgba(199, 167, 88, 0.1)'};
+  color: ${({ theme, completed }) => 
+    completed ? theme.colors.status.success : theme.colors.accent};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-family: ${({ theme }) => theme.fonts.primary};
+  flex-shrink: 0;
+`;
+
+const SenseContent = styled.div`
+  flex: 1;
+  
+  .sense-label {
+    font-size: 1rem;
+    color: ${({ theme, completed }) => 
+      completed ? theme.colors.status.success : theme.colors.text.primary};
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    
+    .sense-icon {
+      font-size: 1.2rem;
+    }
+  }
+  
+  .sense-input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+`;
+
+const InputField = styled.input`
+  padding: 0.5rem;
+  background-color: ${({ theme }) => theme.colors.background.dark};
+  border: 1px solid ${({ theme }) => theme.colors.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 0.9rem;
+  
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.accent};
+  }
+  
+  &::placeholder {
+    color: ${({ theme }) => theme.colors.text.muted};
+  }
+`;
+
+const InputGroup = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  
+  input {
+    flex: 1;
+  }
+`;
+
+const MantraExercise = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`;
+
+const MantraInput = styled.textarea`
+  width: 100%;
+  min-height: 100px;
+  padding: 0.75rem;
+  background-color: ${({ theme }) => theme.colors.background.dark};
+  border: 1px solid ${({ theme }) => theme.colors.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 1rem;
+  resize: vertical;
+  
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.accent};
+  }
+  
+  &::placeholder {
+    color: ${({ theme }) => theme.colors.text.muted};
+  }
+`;
+
+const MantraSuggestions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+`;
+
+const MantraSuggestion = styled.button`
+  padding: 0.5rem 1rem;
+  background-color: ${({ theme }) => theme.colors.background.dark};
+  color: ${({ theme }) => theme.colors.text.secondary};
+  border: 1px solid ${({ theme }) => theme.colors.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all ${({ theme }) => theme.transitions.fast};
+  
+  &:hover {
+    background-color: rgba(199, 167, 88, 0.1);
+    color: ${({ theme }) => theme.colors.accent};
+    border-color: ${({ theme }) => theme.colors.accent};
+  }
+`;
+
+const BreathingExercise = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+`;
+
+const BreathingCircle = styled.div`
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background-color: ${({ theme }) => theme.colors.background.dark};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    border: 3px solid ${({ theme }) => theme.colors.accent};
+    opacity: 0.5;
+  }
+`;
+
+const BreathingInnerCircle = styled.div`
+  width: ${({ size }) => size}px;
+  height: ${({ size }) => size}px;
+  border-radius: 50%;
+  background-color: ${({ theme }) => theme.colors.accent};
+  opacity: 0.7;
+  transition: all 4s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: ${({ theme }) => theme.colors.background.dark};
+  font-weight: 600;
+  font-size: 1.2rem;
+`;
+
+const BreathingInstructions = styled.div`
+  font-size: 1.2rem;
+  color: ${({ theme }) => theme.colors.text.primary};
+  text-align: center;
+`;
+
+const BreathingControls = styled.div`
+  display: flex;
+  gap: 1rem;
+`;
+
+const BreathingButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background-color: ${({ theme, active }) => 
+    active ? theme.colors.accent : 'transparent'};
+  color: ${({ theme, active }) => 
+    active ? theme.colors.background.dark : theme.colors.text.secondary};
+  border: 1px solid ${({ theme, active }) => 
+    active ? theme.colors.accent : theme.colors.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all ${({ theme }) => theme.transitions.fast};
+  
+  &:hover {
+    background-color: ${({ theme, active }) => 
+      active ? theme.colors.accent : 'rgba(199, 167, 88, 0.1)'};
+    color: ${({ theme, active }) => 
+      active ? theme.colors.background.dark : theme.colors.accent};
+  }
+`;
+
+const AIButton = styled.button`
+  padding: 0.75rem 1.5rem;
+  background-color: #C7A758;
+  color: #0A0A0A;
+  border: none;
+  border-radius: ${({ theme }) => theme.borderRadius.small};
+  font-family: ${({ theme }) => theme.fonts.tertiary};
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all ${({ theme }) => theme.transitions.fast};
+  
+  &:hover:not(:disabled) {
+    background-color: #b8994a;
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
+const ToggleButton = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.colors.accent};
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 0.5rem;
+`;
+
+const AnchorWidget = () => {
+  const [activeTechnique, setActiveTechnique] = useState('senses');
+  const [senseInputs, setSenseInputs] = useState({
+    see: ['', '', '', '', ''],
+    feel: ['', '', '', ''],
+    hear: ['', '', ''],
+    smell: ['', ''],
+    taste: ['']
+  });
+  const [mantra, setMantra] = useState('');
+  const [isBreathing, setIsBreathing] = useState(false);
+  const [breathingPhase, setBreathingPhase] = useState('inhale');
+  const [circleSize, setCircleSize] = useState(50);
+  
+  // AI State Variables
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+  
+  // Check if a sense step is completed
+  const isSenseCompleted = (sense) => {
+    return senseInputs[sense].every(input => input.trim() !== '');
+  };
+  
+  // Handle input change for senses
+  const handleSenseInputChange = (sense, index, value) => {
+    const newInputs = { ...senseInputs };
+    newInputs[sense][index] = value;
+    setSenseInputs(newInputs);
+  };
+  
+  // Handle mantra suggestion click
+  const handleMantraSuggestion = (suggestion) => {
+    setMantra(suggestion);
+  };
+  
+  // Toggle breathing exercise
+  const toggleBreathing = () => {
+    if (isBreathing) {
+      setIsBreathing(false);
+      setCircleSize(50);
+    } else {
+      setIsBreathing(true);
+      startBreathingCycle();
+    }
+  };
+  
+  // Start breathing cycle
+  const startBreathingCycle = () => {
+    setBreathingPhase('inhale');
+    setCircleSize(150);
+    
+    setTimeout(() => {
+      setBreathingPhase('hold');
+      
+      setTimeout(() => {
+        setBreathingPhase('exhale');
+        setCircleSize(50);
+        
+        setTimeout(() => {
+          if (isBreathing) {
+            startBreathingCycle();
+          }
+        }, 4000); // Exhale for 4 seconds
+      }, 2000); // Hold for 2 seconds
+    }, 4000); // Inhale for 4 seconds
+  };
+  
+  // AI Mantra Generation Handler
+  const handleGenerateAnchors = async () => {
+    setAiLoading(true);
+    try {
+      const suggestions = await suggestAnchors('', 7);
+      setAiSuggestions(suggestions);
+      setShowAiSuggestions(true);
+    } catch (error) {
+      console.error('Error generating anchors:', error);
+      // Fallback to default suggestions if AI fails
+      setShowAiSuggestions(false);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+  
+  // Mantra suggestions
+  const mantraSuggestions = [
+    'I am safe in this moment',
+    'This feeling will pass',
+    'I am grounded and centered',
+    'I am in control of my thoughts',
+    'I breathe in calm, I breathe out tension'
+  ];
+  
+  return (
+    <AnchorContainer
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <AnchorTitle>
+        <span className="anchor-icon">⚓</span>
+        Anchor - Grounding Exercises
+      </AnchorTitle>
+      
+      <AnchorDescription>
+        Use these grounding techniques when feeling overwhelmed or anxious to bring yourself back to the present moment.
+      </AnchorDescription>
+      
+      <TechniqueSelector>
+        <TechniqueButton 
+          active={activeTechnique === 'senses'} 
+          onClick={() => setActiveTechnique('senses')}
+        >
+          5-4-3-2-1 Senses
+        </TechniqueButton>
+        <TechniqueButton 
+          active={activeTechnique === 'mantra'} 
+          onClick={() => setActiveTechnique('mantra')}
+        >
+          Mantra Repetition
+        </TechniqueButton>
+        <TechniqueButton 
+          active={activeTechnique === 'breathing'} 
+          onClick={() => setActiveTechnique('breathing')}
+        >
+          Deep Breathing
+        </TechniqueButton>
+      </TechniqueSelector>
+      
+      {activeTechnique === 'senses' && (
+        <SensesExercise>
+          <SenseStep>
+            <SenseNumber completed={isSenseCompleted('see')}>5</SenseNumber>
+            <SenseContent completed={isSenseCompleted('see')}>
+              <div className="sense-label">
+                <span className="sense-icon">👁️</span>
+                <span>Things you can SEE</span>
+              </div>
+              <div className="sense-input">
+                {senseInputs.see.map((input, index) => (
+                  <InputField 
+                    key={index}
+                    value={input}
+                    onChange={(e) => handleSenseInputChange('see', index, e.target.value)}
+                    placeholder={`Something you can see...`}
+                  />
+                ))}
+              </div>
+            </SenseContent>
+          </SenseStep>
+          
+          <SenseStep>
+            <SenseNumber completed={isSenseCompleted('feel')}>4</SenseNumber>
+            <SenseContent completed={isSenseCompleted('feel')}>
+              <div className="sense-label">
+                <span className="sense-icon">👋</span>
+                <span>Things you can FEEL</span>
+              </div>
+              <div className="sense-input">
+                {senseInputs.feel.map((input, index) => (
+                  <InputField 
+                    key={index}
+                    value={input}
+                    onChange={(e) => handleSenseInputChange('feel', index, e.target.value)}
+                    placeholder={`Something you can feel...`}
+                  />
+                ))}
+              </div>
+            </SenseContent>
+          </SenseStep>
+          
+          <SenseStep>
+            <SenseNumber completed={isSenseCompleted('hear')}>3</SenseNumber>
+            <SenseContent completed={isSenseCompleted('hear')}>
+              <div className="sense-label">
+                <span className="sense-icon">👂</span>
+                <span>Things you can HEAR</span>
+              </div>
+              <div className="sense-input">
+                {senseInputs.hear.map((input, index) => (
+                  <InputField 
+                    key={index}
+                    value={input}
+                    onChange={(e) => handleSenseInputChange('hear', index, e.target.value)}
+                    placeholder={`Something you can hear...`}
+                  />
+                ))}
+              </div>
+            </SenseContent>
+          </SenseStep>
+          
+          <SenseStep>
+            <SenseNumber completed={isSenseCompleted('smell')}>2</SenseNumber>
+            <SenseContent completed={isSenseCompleted('smell')}>
+              <div className="sense-label">
+                <span className="sense-icon">👃</span>
+                <span>Things you can SMELL</span>
+              </div>
+              <div className="sense-input">
+                {senseInputs.smell.map((input, index) => (
+                  <InputField 
+                    key={index}
+                    value={input}
+                    onChange={(e) => handleSenseInputChange('smell', index, e.target.value)}
+                    placeholder={`Something you can smell...`}
+                  />
+                ))}
+              </div>
+            </SenseContent>
+          </SenseStep>
+          
+          <SenseStep>
+            <SenseNumber completed={isSenseCompleted('taste')}>1</SenseNumber>
+            <SenseContent completed={isSenseCompleted('taste')}>
+              <div className="sense-label">
+                <span className="sense-icon">👅</span>
+                <span>Thing you can TASTE</span>
+              </div>
+              <div className="sense-input">
+                {senseInputs.taste.map((input, index) => (
+                  <InputField 
+                    key={index}
+                    value={input}
+                    onChange={(e) => handleSenseInputChange('taste', index, e.target.value)}
+                    placeholder={`Something you can taste...`}
+                  />
+                ))}
+              </div>
+            </SenseContent>
+          </SenseStep>
+        </SensesExercise>
+      )}
+      
+      {activeTechnique === 'mantra' && (
+        <MantraExercise>
+          <div>
+            <h4>Select a calming mantra or create your own:</h4>
+            
+            {/* AI Generation Button */}
+            <div style={{ marginBottom: '1rem' }}>
+              <AIButton 
+                onClick={handleGenerateAnchors} 
+                disabled={aiLoading}
+              >
+                <span style={{ fontSize: '1rem' }}>🧠</span>
+                {aiLoading ? 'Generating...' : 'Generate with AI'}
+              </AIButton>
+            </div>
+
+            {/* Show AI or default suggestions */}
+            <MantraSuggestions>
+              {(showAiSuggestions && aiSuggestions.length > 0 ? aiSuggestions : mantraSuggestions).map((suggestion, index) => (
+                <MantraSuggestion 
+                  key={index}
+                  onClick={() => handleMantraSuggestion(suggestion)}
+                >
+                  {suggestion}
+                </MantraSuggestion>
+              ))}
+            </MantraSuggestions>
+
+            {/* Toggle button to switch between AI and default */}
+            {showAiSuggestions && aiSuggestions.length > 0 && (
+              <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
+                <ToggleButton
+                  onClick={() => setShowAiSuggestions(false)}
+                >
+                  Show default mantras
+                </ToggleButton>
+              </div>
+            )}
+            {!showAiSuggestions && aiSuggestions.length > 0 && (
+              <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
+                <ToggleButton
+                  onClick={() => setShowAiSuggestions(true)}
+                >
+                  Show AI-generated mantras
+                </ToggleButton>
+              </div>
+            )}
+          </div>
+          
+          <MantraInput 
+            value={mantra}
+            onChange={(e) => setMantra(e.target.value)}
+            placeholder="Enter your mantra here or select one above..."
+          />
+          
+          {mantra && (
+            <div style={{ textAlign: 'center' }}>
+              <p>Repeat your mantra slowly, focusing on each word:</p>
+              <h2 style={{ 
+                color: '#C7A758', 
+                margin: '1.5rem 0', 
+                fontFamily: 'Cinzel, serif',
+                fontSize: '1.8rem',
+                lineHeight: '1.5'
+              }}>
+                "{mantra}"
+              </h2>
+              <p>Take deep breaths between repetitions.</p>
+            </div>
+          )}
+        </MantraExercise>
+      )}
+      
+      {activeTechnique === 'breathing' && (
+        <BreathingExercise>
+          <BreathingCircle>
+            <BreathingInnerCircle size={circleSize}>
+              {breathingPhase === 'inhale' ? 'Inhale' :
+               breathingPhase === 'hold' ? 'Hold' : 'Exhale'}
+            </BreathingInnerCircle>
+          </BreathingCircle>
+          
+          <BreathingInstructions>
+            {isBreathing ? (
+              breathingPhase === 'inhale' ? 'Breathe in slowly...' :
+              breathingPhase === 'hold' ? 'Hold your breath...' :
+              'Breathe out slowly...'
+            ) : (
+              'Press Start to begin the breathing exercise'
+            )}
+          </BreathingInstructions>
+          
+          <BreathingControls>
+            <BreathingButton 
+              active={isBreathing} 
+              onClick={toggleBreathing}
+            >
+              {isBreathing ? 'Stop' : 'Start'}
+            </BreathingButton>
+          </BreathingControls>
+        </BreathingExercise>
+      )}
+    </AnchorContainer>
+  );
 };
 
-// REPLACE THE MANTRA EXERCISE SECTION (around line 550) with this:
-{activeTechnique === 'mantra' && (
-  <MantraExercise>
-    <div>
-      <h4>Select a calming mantra or create your own:</h4>
-      
-      {/* AI Generation Button */}
-      <div style={{ marginBottom: '1rem' }}>
-        <Button 
-          onClick={handleGenerateAnchors} 
-          disabled={aiLoading}
-          style={{
-            backgroundColor: '#C7A758',
-            color: '#0A0A0A',
-            border: 'none',
-            padding: '0.75rem 1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            cursor: aiLoading ? 'not-allowed' : 'pointer',
-            opacity: aiLoading ? 0.6 : 1
-          }}
-        >
-          <span style={{ fontSize: '1rem' }}>🧠</span>
-          {aiLoading ? 'Generating...' : 'Generate with AI'}
-        </Button>
-      </div>
-
-      {/* Show AI or default suggestions */}
-      <MantraSuggestions>
-        {(showAiSuggestions && aiSuggestions.length > 0 ? aiSuggestions : mantraSuggestions).map((suggestion, index) => (
-          <MantraSuggestion 
-            key={index}
-            onClick={() => handleMantraSuggestion(suggestion)}
-          >
-            {suggestion}
-          </MantraSuggestion>
-        ))}
-      </MantraSuggestions>
-
-      {/* Toggle button to switch between AI and default */}
-      {showAiSuggestions && aiSuggestions.length > 0 && (
-        <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
-          <button
-            onClick={() => setShowAiSuggestions(false)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#C7A758',
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Show default mantras
-          </button>
-        </div>
-      )}
-      {!showAiSuggestions && aiSuggestions.length > 0 && (
-        <div style={{ marginTop: '0.5rem', textAlign: 'center' }}>
-          <button
-            onClick={() => setShowAiSuggestions(true)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#C7A758',
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Show AI-generated mantras
-          </button>
-        </div>
-      )}
-    </div>
-    
-    <MantraInput 
-      value={mantra}
-      onChange={(e) => setMantra(e.target.value)}
-      placeholder="Enter your mantra here or select one above..."
-    />
-    
-    {mantra && (
-      <div style={{ textAlign: 'center' }}>
-        <p>Repeat your mantra slowly, focusing on each word:</p>
-        <h2 style={{ 
-          color: '#C7A758', 
-          margin: '1.5rem 0', 
-          fontFamily: 'Cinzel, serif',
-          fontSize: '1.8rem',
-          lineHeight: '1.5'
-        }}>
-          "{mantra}"
-        </h2>
-        <p>Take deep breaths between repetitions.</p>
-      </div>
-    )}
-  </MantraExercise>
-)}
-
-// ============================================================================
-// USAGE NOTES:
-// ============================================================================
-// 1. Create the anchorClient.js file in src/services/
-// 2. Update AnchorWidget.jsx with the new imports, state, and handler
-// 3. Replace the mantra exercise section with the updated code
-// 4. The AI button will appear above the mantra suggestions
-// 5. Users can toggle between AI-generated and default mantras
-// ============================================================================
+export default AnchorWidget;
