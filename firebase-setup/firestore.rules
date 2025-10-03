@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to validate required fields
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+    
+    // Journal entries
+    match /journal_entries/{entryId} {
+      // Allow read if user owns the document
+      allow read: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Allow create if authenticated and setting own userId
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       hasRequiredFields(['userId', 'content']);
+      
+      // Allow update if user owns the document
+      allow update: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+      
+      // Allow delete if user owns the document
+      allow delete: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // Exposure ladders
+    match /exposure_ladders/{ladderId} {
+      // Allow read if user owns the document
+      allow read: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Allow create if authenticated and setting own userId
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       hasRequiredFields(['userId', 'fearTitle', 'steps']);
+      
+      // Allow update if user owns the document
+      allow update: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+      
+      // Allow delete if user owns the document
+      allow delete: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // Reframes
+    match /reframes/{reframeId} {
+      // Allow read if user owns the document
+      allow read: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Allow create if authenticated and setting own userId
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       hasRequiredFields(['userId', 'negativeThought']);
+      
+      // Allow update if user owns the document
+      allow update: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+      
+      // Allow delete if user owns the document
+      allow delete: if isAuthenticated() && 
+                       resource.data.userId == request.auth.uid;
+    }
+  }
+}
