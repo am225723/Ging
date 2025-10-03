@@ -1,49 +1,48 @@
-# Application Debugging and Enhancement Plan
+# Migration from Supabase to Firebase & Deno to Node.js
 
-## 1. Investigation Phase
-- [x] Examine the current application structure and routing
-- [x] Review AI-related service clients (reframeForgeClient, journalAiClient, exposureLadderClient)
-- [x] Check Supabase Edge Functions for AI features
-- [x] Identify error patterns and root causes
-- [x] Review existing documentation for known issues
+## Phase 1: Analysis & Planning
+- [x] Clone and examine repository structure
+- [x] Identify Supabase dependencies and usage patterns
+- [x] Identify Deno Edge Functions and their dependencies
+- [x] Document current architecture
+- [x] Create Firebase project setup guide
+- [x] Create Node.js backend structure plan
 
-## 2. Create New Page Components
-- [x] Create ReframeForge page component (convert from widget)
-- [x] Create ExposureLadder page component (convert from widget)
-- [x] Create Anchor/Mantra page component (convert from widget)
-- [x] Ensure all pages have proper error handling
+## Phase 2: Firebase Setup & Configuration
+- [x] Create Firebase configuration files
+- [x] Set up Firebase Authentication
+- [x] Set up Firestore database schema
+- [x] Configure Firebase Cloud Functions
+- [x] Set up environment variables for Firebase
 
-## 3. Build Sidebar Navigation System
-- [x] Create new Sidebar component with navigation tabs
-- [x] Update routing for new pages in App.jsx
-- [x] Style sidebar with theme consistency
-- [x] Make sidebar responsive for mobile
-- [x] Add admin notes section to sidebar
+## Phase 3: Backend Migration (Deno to Node.js)
+- [x] Convert journal-ai Edge Function to Node.js Cloud Function
+- [x] Convert exposure-ladder Edge Function to Node.js Cloud Function
+- [x] Convert reframe-forge Edge Function to Node.js Cloud Function
+- [x] Set up CORS configuration for Cloud Functions
+- [ ] Test all Cloud Functions locally
 
-## 4. Administrator Notes Feature
-- [x] Create database schema for admin notes
-- [x] Create AdminNotes management page
-- [x] Implement CRUD operations for notes
-- [x] Add "From Warden Aleix of the Psychological Citadel" section to sidebar
-- [x] Add admin notes route to App.jsx
+## Phase 4: Frontend Migration (Supabase to Firebase)
+- [x] Replace Supabase client with Firebase SDK
+- [x] Update AuthContext to use Firebase Authentication
+- [x] Update all database queries to use Firestore
+- [x] Update all service files (journalClient, exposureLadderClient, etc.)
+- [x] Update environment variable references
 
-## 5. Update Dashboard
-- [x] Simplify Dashboard to show overview/stats
-- [x] Remove widget components (moved to separate pages)
-- [x] Add quick links to new feature pages
-- [x] Display recent activity
+## Phase 5: Database Schema Migration
+- [x] Create Firestore security rules
+- [x] Document Firestore collection structure
+- [ ] Create data migration scripts (if needed)
 
-## 6. Build and Testing
-- [x] Install dependencies
-- [x] Build project successfully
-- [ ] Run admin_notes schema in Supabase
-- [ ] Test all AI features end-to-end
-- [ ] Verify navigation works correctly
-- [ ] Test admin notes functionality
-- [ ] Test responsive design
+## Phase 6: Testing & Validation
+- [ ] Test authentication flows
+- [ ] Test journal functionality
+- [ ] Test exposure ladder functionality
+- [ ] Test reframe forge functionality
+- [ ] Verify all API calls work correctly
 
-## 7. Deployment
-- [ ] Commit all changes to new branch
-- [ ] Push branch to repository
-- [ ] Create pull request with detailed description
-- [ ] Provide testing instructions
+## Phase 7: Documentation & Deployment
+- [x] Create comprehensive migration guide
+- [x] Update README with Firebase setup instructions
+- [x] Create deployment guide for Firebase
+- [x] Document any breaking changes or differences
